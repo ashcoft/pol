@@ -498,9 +498,14 @@
     this.options = $.extend({}, $.fn.collapse.defaults, options)
 
     if (this.options.parent) {
-      this.$parent = typeof this.options.parent == 'string'
-        ? $($.find(this.options.parent))
-        : $(this.options.parent)
+      var parent = this.options.parent
+      this.$parent = typeof parent == 'string'
+        ? $($.find(parent))
+        : (parent && parent.jquery)
+          ? parent
+          : (parent && parent.nodeType)
+            ? $(parent)
+            : $()
     }
 
     this.options.toggle && this.toggle()
