@@ -12,9 +12,10 @@ def build_xpath_results(selectors, file_name):
     field_xpathes = selectors[1]
 
     snapshot_dir = os.path.realpath(SNAPSHOT_DIR)
+    boundary = snapshot_dir.rstrip(os.path.sep) + os.path.sep
     fpath = os.path.realpath(os.path.join(SNAPSHOT_DIR, file_name))
 
-    if not fpath.startswith(snapshot_dir + os.path.sep):
+    if not fpath.startswith(boundary):
         raise ValueError('Invalid file name: must stay inside %s' % snapshot_dir)
 
     with open(fpath) as f:
