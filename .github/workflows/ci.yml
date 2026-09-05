@@ -30,6 +30,9 @@ jobs:
           pip install -r requirements.txt
           pip install mysqlclient pytest
 
+      - name: Generate settings module (repo expects settings.py from example)
+        run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+
       - name: Run tests
         run: pytest -v tests/
 
