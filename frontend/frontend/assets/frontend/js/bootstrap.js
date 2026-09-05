@@ -500,7 +500,7 @@
     if (this.options.parent) {
       var parent = this.options.parent
       this.$parent = typeof parent == 'string'
-        ? $($.find(parent))
+        ? $(document).find(parent)
         : (parent && parent.jquery)
           ? parent
           : (parent && parent.nodeType)
