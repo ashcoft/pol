@@ -1,36 +1,39 @@
-FROM ubuntu:bionic as builder
+FROM python:3.11-slim
 
-#SHELL ["/bin/bash", "-c"]
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-RUN echo 'APT::Install-Recommends 0;' >> /etc/apt/apt.conf.d/01norecommends \
-    && echo 'APT::Install-Suggests 0;' >> /etc/apt/apt.conf.d/01norecommends \
-    && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y bash mysql-client vim.tiny wget sudo net-tools ca-certificates unzip apt-transport-https \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y python-minimal python-dev libmysqlclient-dev libxml2-dev libxslt-dev python-dev libffi-dev gcc libssl-dev gettext \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y python-pip python-setuptools nodejs node-gyp npm ruby nginx \
-    && pip install --upgrade pip \
-    && npm install -g less@2.7.1 \
-    && npm install -g yuglify@0.1.4 \
-    && gem install sass -v 3.4.22
+# Build/runtime deps for mysqlclient, lxml and the downloader stack.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        default-libmysqlclient-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        libffi-dev \
+        libssl-dev \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ADD . .
 
-RUN export PATH=$PATH:/usr/bin/ \
-    && export PATH=$PATH:/usr/local/bin/
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir mysqlclient
 
-RUN pip install --upgrade setuptools \ 
-    && pip install -r requirements.txt \
-    && apt-get install -y libmysqlclient-dev \
-    && pip install --user MySQL-python
+COPY . .
 
-RUN cp ./nginx/default.site-example /etc/nginx/sites-available/default \
-    && cp ./frontend/frontend/settings.py.example ./frontend/frontend/settings.py
+# The app expects a settings module next to the frontend package.
+RUN cp ./frontend/frontend/settings.py.example ./frontend/frontend/settings.py \
+    && chmod +x ./wait-for-it.sh \
+    && useradd --create-home --uid 1000 appuser \
+    && mkdir -p /tmp && chown -R appuser:appuser /app /tmp
 
-RUN cd /var/lib/gems/2.5.0/gems/sass-3.4.22/lib/sass/ \
-    && sed -i "s/when\ Fixnum/when\ Integer/" util.rb
+USER appuser
 
-#WORKDIR ./frontend
-RUN chmod +x ./wait-for-it.sh
+EXPOSE 1234
 
-#ENTRYPOINT ["/bin/bash", "start.sh"]
+CMD ["python", "downloader.py", "1234"]

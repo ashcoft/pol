@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write # to create releases and push version tags
+
+jobs:
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@4f71ae2fc3b55cc06cfb28e5344d175368673ba3 # v9.8.8
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          root_options: "-v"
+
+      - name: Publish to GitHub Releases
+        uses: python-semantic-release/publish-action@decca13e5804054cd2dad7a00e2e1f355d78abc0 # v9.8.8
+        if: steps.release.outputs.released == 'true'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release.outputs.tag }}

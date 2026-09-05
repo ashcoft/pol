@@ -21,7 +21,6 @@ from twisted.logger import Logger
 
 from scrapy.http.response.text import TextResponse
 from scrapy.downloadermiddlewares.httpcompression import HttpCompressionMiddleware
-from scrapy.downloadermiddlewares.decompression import DecompressionMiddleware
 from scrapy.http.request import Request
 from scrapy.http import Headers
 from scrapy.responsetypes import responsetypes
@@ -235,7 +234,6 @@ class Downloader(object):
 
     def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
         sresponse = HttpCompressionMiddleware().process_response(Request(sresponse.url), sresponse, None)
-        sresponse = DecompressionMiddleware().process_response(None, sresponse, None)
 
         response_headers = self.prepare_response_headers(sresponse.headers)
 
@@ -335,7 +333,7 @@ class Site(resource.Resource):
     def tryLocalPage(self, url):
         if self.prefetch_dir:
             m = md5(url).hexdigest()
-            domain = urlparse(url).netloc
+            domain = six.moves.urllib.parse.urlparse(url).netloc
             try:
                 with open(self.prefetch_dir + '/' + m + '.' + domain) as f:
                     return pickle.load(f)
@@ -365,7 +363,7 @@ class Site(resource.Resource):
             else:
                 res = self.feed.getFeedData(feed_id)
 
-                if isinstance(res, basestring): # error message
+                if isinstance(res, six.string_types): # error message
                     return res
 
                 url, feed_config = res

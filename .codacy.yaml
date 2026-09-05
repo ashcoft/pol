@@ -1,0 +1,5 @@
+# Codacy configuration.
+# pytest uses `assert` statements intentionally; the assert-usage style rule
+# is a false positive for test files, so exclude the tests directory.
+exclude_paths:
+  - "tests/**"
