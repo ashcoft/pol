@@ -5,6 +5,7 @@ import json
 import pickle
 import time, sys, traceback
 import re
+import os
 
 import six
 from lxml import etree
@@ -334,8 +335,10 @@ class Site(resource.Resource):
         if self.prefetch_dir:
             m = md5(url).hexdigest()
             domain = six.moves.urllib.parse.urlparse(url).netloc
+            safe_domain = re.sub(br'[^A-Za-z0-9._-]', b'_', domain if isinstance(domain, bytes) else domain.encode('utf-8'))
+            local_path = os.path.join(self.prefetch_dir, m + '.' + safe_domain.decode('ascii', 'ignore'))
             try:
-                with open(self.prefetch_dir + '/' + m + '.' + domain) as f:
+                with open(local_path) as f:
                     return pickle.load(f)
             except IOError:
                 pass
