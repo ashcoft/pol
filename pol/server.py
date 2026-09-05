@@ -1,8 +1,9 @@
 from __future__ import print_function
 from datetime import datetime
-from hashlib import md5
+from hashlib import sha256
 import json
 import pickle
+import stat
 import time, sys, traceback
 import re
 import os
@@ -63,9 +64,9 @@ class Downloader(object):
     def _saveResponse(self, headers, url, tree):
         # save html for extended selectors
         if six.PY2:
-            file_name = '%s_%s' % (time.time(), md5(url).hexdigest())
+            file_name = '%s_%s' % (time.time(), sha256(url).hexdigest())
         elif six.PY3:
-            file_name = '%s_%s' % (time.time(), md5(url.encode('utf-8')).hexdigest())
+            file_name = '%s_%s' % (time.time(), sha256(url.encode('utf-8')).hexdigest())
         file_path = self.snapshot_dir + '/' + file_name
         with open(file_path, 'w') as f:
             f.write(url + '\n')
@@ -333,15 +334,30 @@ class Site(resource.Resource):
 
     def tryLocalPage(self, url):
         if self.prefetch_dir:
-            m = md5(url).hexdigest()
+            if isinstance(url, bytes):
+                url = url.decode('utf-8', 'replace')
+            m = sha256(url.encode('utf-8')).hexdigest()
             domain = six.moves.urllib.parse.urlparse(url).netloc
-            safe_domain = re.sub(br'[^A-Za-z0-9._-]', b'_', domain if isinstance(domain, bytes) else domain.encode('utf-8'))
-            local_path = os.path.join(self.prefetch_dir, m + '.' + safe_domain.decode('ascii', 'ignore'))
-            try:
-                with open(local_path) as f:
-                    return pickle.load(f)
-            except IOError:
-                pass
+            base_dir = os.path.realpath(self.prefetch_dir)
+            boundary = base_dir.rstrip(os.path.sep) + os.path.sep
+            safe_domain = re.sub(r'[^A-Za-z0-9._-]', '_', domain)
+            fpath = os.path.realpath(os.path.join(base_dir, m + '.' + safe_domain))
+
+            if fpath.startswith(boundary):
+                fd = -1
+                try:
+                    # O_NOFOLLOW prevents a symlink swap between the
+                    # realpath() check and the open() from escaping base_dir.
+                    fd = os.open(fpath, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+                    if stat.S_ISREG(os.fstat(fd).st_mode):
+                        with os.fdopen(fd, 'rb') as f:
+                            fd = -1  # ownership transferred to fdopen
+                            return pickle.load(f)
+                except (IOError, OSError):
+                    pass
+                finally:
+                    if fd != -1:
+                        os.close(fd)
         return None
 
     def render_GET(self, request):
