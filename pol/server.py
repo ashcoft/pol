@@ -335,17 +335,16 @@ class Site(resource.Resource):
         if self.prefetch_dir:
             m = md5(url).hexdigest()
             domain = six.moves.urllib.parse.urlparse(url).netloc
-            safe_domain = re.sub(br'[^A-Za-z0-9._-]', b'_', domain if isinstance(domain, bytes) else domain.encode('utf-8'))
-            local_path = os.path.join(self.prefetch_dir, m + '.' + safe_domain.decode('ascii', 'ignore'))
             base_dir = os.path.realpath(self.prefetch_dir)
-            candidate_path = os.path.realpath(local_path)
-            if os.path.commonpath([base_dir, candidate_path]) != base_dir:
-                return None
-            try:
-                with open(candidate_path) as f:
-                    return pickle.load(f)
-            except IOError:
-                pass
+            safe_domain = re.sub(r'[^A-Za-z0-9._-]', '_', domain)
+            fpath = os.path.realpath(os.path.join(base_dir, m + '.' + safe_domain))
+
+            if fpath.startswith(base_dir + os.path.sep):
+                try:
+                    with open(fpath) as f:
+                        return pickle.load(f)
+                except IOError:
+                    pass
         return None
 
     def render_GET(self, request):
