@@ -1,5 +1,7 @@
 from hashlib import md5
 
+import os
+
 from scrapy.selector import Selector
 
 from .settings import SNAPSHOT_DIR
@@ -9,7 +11,12 @@ def build_xpath_results(selectors, file_name):
     feed_xpath = selectors[0]
     field_xpathes = selectors[1]
 
-    fpath = "%s/%s" % (SNAPSHOT_DIR, file_name)
+    snapshot_dir = os.path.realpath(SNAPSHOT_DIR)
+    boundary = snapshot_dir.rstrip(os.path.sep) + os.path.sep
+    fpath = os.path.realpath(os.path.join(SNAPSHOT_DIR, file_name))
+
+    if not fpath.startswith(boundary):
+        raise ValueError('Invalid file name: must stay inside %s' % snapshot_dir)
 
     with open(fpath) as f:
         data = f.read()
