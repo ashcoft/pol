@@ -28,8 +28,12 @@ COPY . .
 
 # The app expects a settings module next to the frontend package.
 RUN cp ./frontend/frontend/settings.py.example ./frontend/frontend/settings.py \
-    && chmod +x ./wait-for-it.sh
+    && chmod +x ./wait-for-it.sh \
+    && useradd --create-home --uid 1000 appuser \
+    && mkdir -p /tmp && chown -R appuser:appuser /app /tmp
 
-EXPOSE 8088
+USER appuser
 
-CMD ["python", "downloader.py"]
+EXPOSE 1234
+
+CMD ["python", "downloader.py", "1234"]

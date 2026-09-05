@@ -40,6 +40,11 @@ def test_snapshot_path_guard_rejects_traversal(tmp_path, monkeypatch):
         if not resolved.startswith(os.path.realpath(base) + os.path.sep):
             with pytest.raises(ValueError):
                 ext.build_xpath_results(["", {"999": ["", False]}], name)
+        else:
+            # Values that resolve inside must NOT raise the guard.
+            with open(resolved, "w") as f:
+                f.write("header\n\n<body>x</body>\n")
+            ext.build_xpath_results(["", {"999": ["", False]}], name)
 
 
 def test_snapshot_path_guard_accepts_valid_name(tmp_path, monkeypatch):
@@ -56,5 +61,10 @@ def test_snapshot_path_guard_accepts_valid_name(tmp_path, monkeypatch):
     with open(os.path.join(base, fname), "w") as f:
         f.write("header line\n\n<body>content</body>\n")
 
-    result = ext.build_xpath_results(["//body", {"999": ["//body", False]}], fname)
+    result = ext.build_xpath_results(["//no-such-element", {"999": ["//no-such-element", False]}], fname)
     assert result is not None
+    messages, posts, success = result
+    assert success is True
+    assert posts == []  # no elements match the xpath, so nothing is extracted
+    feed_result, field_results = messages
+    assert feed_result["count"] == 0

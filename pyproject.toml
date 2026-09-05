@@ -4,15 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pol"
-dynamic = ["version"]
+version = "0.1.0"
 description = "RSS generator website"
 requires-python = ">=3.9"
 
-[tool.setuptools.dynamic]
-version = { attr = "pol.__version__" }
-
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
+version_variables = ["pol/__init__.py:__version__"]
 branch = "master"
 commit_parser = "conventional"
 major_on_zero = true

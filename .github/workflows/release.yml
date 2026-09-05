@@ -26,13 +26,13 @@ jobs:
 
       - name: Semantic Release
         id: release
-        uses: python-semantic-release/python-semantic-release@v9.8.8
+        uses: python-semantic-release/python-semantic-release@4f71ae2fc3b55cc06cfb28e5344d175368673ba3 # v9.8.8
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           root_options: "-v"
 
       - name: Publish to GitHub Releases
-        uses: python-semantic-release/publish-action@v9.8.8
+        uses: python-semantic-release/publish-action@decca13e5804054cd2dad7a00e2e1f355d78abc0 # v9.8.8
         if: steps.release.outputs.released == 'true'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
