@@ -1,6 +1,6 @@
 from __future__ import print_function
 from datetime import datetime
-from hashlib import md5
+from hashlib import sha256
 import json
 import pickle
 import stat
@@ -64,9 +64,9 @@ class Downloader(object):
     def _saveResponse(self, headers, url, tree):
         # save html for extended selectors
         if six.PY2:
-            file_name = '%s_%s' % (time.time(), md5(url).hexdigest())
+            file_name = '%s_%s' % (time.time(), sha256(url).hexdigest()[:32])
         elif six.PY3:
-            file_name = '%s_%s' % (time.time(), md5(url.encode('utf-8')).hexdigest())
+            file_name = '%s_%s' % (time.time(), sha256(url.encode('utf-8')).hexdigest()[:32])
         file_path = self.snapshot_dir + '/' + file_name
         with open(file_path, 'w') as f:
             f.write(url + '\n')
@@ -336,7 +336,7 @@ class Site(resource.Resource):
         if self.prefetch_dir:
             if isinstance(url, bytes):
                 url = url.decode('utf-8', 'replace')
-            m = md5(url.encode('utf-8'), usedforsecurity=False).hexdigest()
+            m = sha256(url.encode('utf-8')).hexdigest()[:32]
             domain = six.moves.urllib.parse.urlparse(url).netloc
             base_dir = os.path.realpath(self.prefetch_dir)
             boundary = base_dir.rstrip(os.path.sep) + os.path.sep
