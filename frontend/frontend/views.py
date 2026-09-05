@@ -177,7 +177,7 @@ def setup_validate_selectors(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}', file_name):
+        if not re.match('^\d{10}\.\d+_[\da-f]{32}$', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
@@ -198,7 +198,7 @@ def setup_create_feed_ext(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}', file_name):
+        if not re.match('^\d{10}\.\d+_[\da-f]{32}$', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
