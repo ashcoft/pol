@@ -3,6 +3,7 @@ from datetime import datetime
 from hashlib import md5
 import json
 import pickle
+import stat
 import time, sys, traceback
 import re
 import os
@@ -341,9 +342,14 @@ class Site(resource.Resource):
 
             if fpath.startswith(base_dir + os.path.sep):
                 try:
-                    with open(fpath) as f:
-                        return pickle.load(f)
-                except IOError:
+                    # O_NOFOLLOW prevents a symlink swap between the
+                    # realpath() check and the open() from escaping base_dir.
+                    fd = os.open(fpath, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+                    if stat.S_ISREG(os.fstat(fd).st_mode):
+                        with os.fdopen(fd, 'rb') as f:
+                            return pickle.load(f)
+                    os.close(fd)
+                except (IOError, OSError):
                     pass
         return None
 
