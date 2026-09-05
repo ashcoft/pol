@@ -36,6 +36,34 @@ jobs:
       - name: Run tests
         run: pytest -v tests/
 
+  lint:
+    name: Lint & static checks
+    runs-on: ubuntu-latest
+    continue-on-error: true # legacy codebase: surface issues without blocking merges
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate settings module
+        run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt mysqlclient pylint
+
+      - name: Pylint (errors only)
+        run: |
+          pylint --errors-only pol/ frontend/frontend/setup_tool_ext.py tests/test_ci.py || true
+
+      - name: Node syntax check on vendored JS
+        run: |
+          node --check frontend/frontend/assets/frontend/js/jquery.js
+          node --check frontend/frontend/assets/frontend/js/bootstrap.js
+
   docker:
     name: Docker image build
     runs-on: ubuntu-latest

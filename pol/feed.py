@@ -1,6 +1,7 @@
 import w3lib.url
 import w3lib.html
 
+import six
 from lxml import etree
 import re, sys
 from hashlib import md5
@@ -87,7 +88,7 @@ class Feed(object):
 
     def _build_link(self, html, doc_url, url):
         base_url = w3lib.html.get_base_url(html, doc_url)
-        return w3lib.url.urljoin_rfc(base_url, url).decode('utf-8')
+        return six.moves.urllib.parse.urljoin(base_url, url)
 
     def buildFeed(self, selector, page_unicode, feed_config):
         selector.remove_namespaces()

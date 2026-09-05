@@ -333,7 +333,7 @@ class Site(resource.Resource):
     def tryLocalPage(self, url):
         if self.prefetch_dir:
             m = md5(url).hexdigest()
-            domain = urlparse(url).netloc
+            domain = six.moves.urllib.parse.urlparse(url).netloc
             try:
                 with open(self.prefetch_dir + '/' + m + '.' + domain) as f:
                     return pickle.load(f)
