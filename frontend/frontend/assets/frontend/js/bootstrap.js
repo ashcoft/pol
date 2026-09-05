@@ -499,13 +499,19 @@
 
     if (this.options.parent) {
       var parent = this.options.parent
-      this.$parent = typeof parent == 'string'
-        ? $(document).find(parent)
-        : (parent && parent.jquery)
-          ? parent
-          : (parent && parent.nodeType)
-            ? $(parent)
-            : $()
+      if (typeof parent == 'string') {
+        try {
+          this.$parent = $(document).find(parent)
+        } catch (e) {
+          this.$parent = $()
+        }
+      } else if (parent && parent.jquery) {
+        this.$parent = parent
+      } else if (parent && parent.nodeType) {
+        this.$parent = $(parent)
+      } else {
+        this.$parent = $()
+      }
     }
 
     this.options.toggle && this.toggle()
