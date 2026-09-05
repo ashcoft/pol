@@ -1,7 +1,7 @@
-# [PolitePaul](http://politepaul.com "RSS Feed Generator")
+# [RSSPol](https://feed.dony.me "RSS Feed Generator")
 # RSS feed generator website with user friendly interface
 
-### Warning: This source code is outdated! Use full featured version on [politepaul.com](http://politepaul.com "RSS Feed Generator")
+### Warning: This source code is outdated! Use full featured version on [feed.dony.me](https://feed.dony.me "RSS Feed Generator")
 
 ![PolitePaul](frontend/frontend/assets/frontend/images/apple-touch-icon-144x144-precomposed.png "PolitePaul")
 
