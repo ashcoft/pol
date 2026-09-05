@@ -38,7 +38,6 @@ jobs:
           else
             echo "has_token=false" >> "$GITHUB_OUTPUT"
             echo "::error title=Snyk scan skipped::SNYK_TOKEN is not configured; Snyk security scans were skipped. Configure SNYK_TOKEN in repository secrets to enable Snyk scanning."
-            echo "::notice title=Snyk scan skipped::SNYK_TOKEN is not configured; Snyk security scans were skipped."
           fi
 
   snyk:
