@@ -1318,11 +1318,24 @@
         .css(position, delta ? (50 * (1 - delta / dimension) + "%") : '')
     }
 
+  , escapeHtml: function (text) {
+      return String(text == null ? '' : text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    }
+
   , setContent: function () {
       var $tip = this.tip()
         , title = this.getTitle()
 
-      $tip.find('.tooltip-inner')[this.options.html ? 'html' : 'text'](title)
+      if (this.options.html) {
+        $tip.find('.tooltip-inner').html(this.escapeHtml(title))
+      } else {
+        $tip.find('.tooltip-inner').text(title)
+      }
       $tip.removeClass('fade in top bottom left right')
     }
 
