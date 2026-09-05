@@ -337,8 +337,12 @@ class Site(resource.Resource):
             domain = six.moves.urllib.parse.urlparse(url).netloc
             safe_domain = re.sub(br'[^A-Za-z0-9._-]', b'_', domain if isinstance(domain, bytes) else domain.encode('utf-8'))
             local_path = os.path.join(self.prefetch_dir, m + '.' + safe_domain.decode('ascii', 'ignore'))
+            base_dir = os.path.realpath(self.prefetch_dir)
+            candidate_path = os.path.realpath(local_path)
+            if os.path.commonpath([base_dir, candidate_path]) != base_dir:
+                return None
             try:
-                with open(local_path) as f:
+                with open(candidate_path) as f:
                     return pickle.load(f)
             except IOError:
                 pass
