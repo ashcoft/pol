@@ -64,9 +64,9 @@ class Downloader(object):
     def _saveResponse(self, headers, url, tree):
         # save html for extended selectors
         if six.PY2:
-            file_name = '%s_%s' % (time.time(), sha256(url).hexdigest()[:32])
+            file_name = '%s_%s' % (time.time(), sha256(url).hexdigest())
         elif six.PY3:
-            file_name = '%s_%s' % (time.time(), sha256(url.encode('utf-8')).hexdigest()[:32])
+            file_name = '%s_%s' % (time.time(), sha256(url.encode('utf-8')).hexdigest())
         file_path = self.snapshot_dir + '/' + file_name
         with open(file_path, 'w') as f:
             f.write(url + '\n')
@@ -336,7 +336,7 @@ class Site(resource.Resource):
         if self.prefetch_dir:
             if isinstance(url, bytes):
                 url = url.decode('utf-8', 'replace')
-            m = sha256(url.encode('utf-8')).hexdigest()[:32]
+            m = sha256(url.encode('utf-8')).hexdigest()
             domain = six.moves.urllib.parse.urlparse(url).netloc
             base_dir = os.path.realpath(self.prefetch_dir)
             boundary = base_dir.rstrip(os.path.sep) + os.path.sep
