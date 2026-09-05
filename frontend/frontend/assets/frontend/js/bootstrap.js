@@ -1783,6 +1783,7 @@
         , previous
         , $target
         , e
+        , targetEl
 
       if (!selector) {
         selector = $this.attr('href')
@@ -1801,7 +1802,11 @@
 
       if (e.isDefaultPrevented()) return
 
-      $target = $(selector)
+      targetEl = null
+      if (selector && /^#[A-Za-z][\w\-\:\.]*$/.test(selector)) {
+        targetEl = document.getElementById(selector.slice(1))
+      }
+      $target = targetEl ? $(targetEl) : $()
 
       this.activate($this.parent('li'), $ul)
       this.activate($target, $target.parent(), function () {
