@@ -81,8 +81,9 @@ jobs:
         if: steps.snyk-token.outputs.has_token == 'true'
         run: snyk iac test --report # || true
 
-        # Build the docker image for testing
+        # Build the docker image for testing (only needed for Snyk Container scan)
       - name: Build a Docker image
+        if: steps.snyk-token.outputs.has_token == 'true'
         run: docker build -t your/image-to-test .
         # Runs Snyk Container (Container and SCA) analysis and uploads result to Snyk.
       - name: Snyk Container monitor
