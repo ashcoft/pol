@@ -101,10 +101,15 @@
     }
 
     if (selector) {
-      try {
-        $parent = $(document).find(selector)
-      } catch (e) {
+      if (selector.charAt(0) === '<') {
+        // Never interpret DOM text as HTML
         $parent = $()
+      } else {
+        try {
+          $parent = $(document).find(selector)
+        } catch (e) {
+          $parent = $()
+        }
       }
     } else {
       $parent = $()
