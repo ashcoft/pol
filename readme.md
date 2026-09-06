@@ -21,7 +21,7 @@ Dockerfile, docker-compose.yaml, wait-for-it.sh, downloader.py
 
 ## Requirements
 
-* Python 3.9+ (3.11 recommended, used by CI and Docker)
+* Python 3.10+ (3.11 recommended, used by CI and Docker)
 * MySQL 5.7+ (used by both the frontend and the downloader)
 * System build dependencies for `mysqlclient`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
