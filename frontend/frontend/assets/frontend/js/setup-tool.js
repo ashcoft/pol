@@ -476,7 +476,7 @@ window.loader = loader;
 
 $(document).ready(function(){
     // skip non setup page
-    if (!document.location.href.match('https?://[^/]+/[^/]+/setup\?.+'))
+    if (!document.location.href.match('https?://[^/]+/[^/]+/setup\\?.+'))
         return;
 
     loader(true);
