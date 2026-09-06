@@ -56,7 +56,7 @@ def build_xpath_results(selectors, file_name):
                                 extracted_post[field_id] = u''.join(extracts)
                     except ValueError as ex:
                         success = False
-                        field_results[field_id]['error'] = str(ex)
+                        field_results[field_id]['error'] = 'Invalid selector'
 
                 if selected_required:
                     for field_id, xpath_required in field_xpathes.items():
@@ -83,12 +83,12 @@ def build_xpath_results(selectors, file_name):
                     except ValueError as ex:
                         if not (field_id in field_results):
                             field_results[field_id] = {}
-                        field_results[field_id]['error'] = str(ex)
+                        field_results[field_id]['error'] = 'Invalid selector'
                         success = False
 
 
     except ValueError as ex:
-        feed_result = {'error': str(ex)}
+        feed_result = {'error': 'Invalid selector'}
         success = False
 
     return [[feed_result, field_results], extracted_posts, success]
