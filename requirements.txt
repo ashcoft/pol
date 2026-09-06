@@ -8,7 +8,7 @@ django-pipeline==1.5.4
 w3lib>=2.3.1 # py3-compatible; 1.17.0 breaks on modern Python re (Snyk pin updated)
 feedgenerator==1.8
 brotli==1.2.0
-sqlparse==0.5.4
+sqlparse==0.6.0
 cssselect==1.2.0 # compat with parsel 1.5.0 (newer cssselect drops _unicode_safe_getattr)
 #sudo apt-get install nodejs npm
 #sudo npm install -g less
