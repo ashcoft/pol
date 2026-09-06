@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["pol/__init__.py:__version__"]
 branch = "master"
-commit_parser = "conventional"
+commit_parser = "angular"
 major_on_zero = true
 upload_to_release = true
 upload_to_vcs_release = true
