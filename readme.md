@@ -130,7 +130,7 @@ cp frontend/frontend/settings.py.example frontend/frontend/settings.py
 pytest tests/
 ```
 
-CI runs the same tests, pivoting checks, and a Docker image build on every push/PR. Releases are cut automatically by the Release workflow(python-semantic-release) when CI passes on `master`.
+CI runs the same tests, linting checks, and a Docker image build on pull requests and pushes to `master`. Releases are cut automatically by the Release workflow (python-semantic-release) when CI passes on `master`.
 
 ## License
 
