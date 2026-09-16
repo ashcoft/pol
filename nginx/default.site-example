@@ -26,8 +26,9 @@ server {
 	}
 
 	# RSS Finder (feed discovery) runs as the `rssfinder` compose service on
-	# port 3001. Same-origin redirect keeps the UI link portable.
+	# port 3001. Same-origin redirect keeps the UI link portable; the query
+	# string is passed through so /finder?q=example.com works.
 	location = /finder {
-		return 302 $scheme://$host:3001/;
+		return 302 $scheme://$host:3001/$is_args$args;
 	}
 }

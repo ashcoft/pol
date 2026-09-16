@@ -47,6 +47,13 @@ def test_nginx_redirects_finder_entry_point():
     assert "3001" in site, "nginx must redirect /finder to the rssfinder service on port 3001"
 
 
+def test_nginx_finder_redirect_preserves_query_string():
+    site = _read("nginx", "default.site-example")
+    # $is_args$args forwards the query string, so /finder?q=example.com
+    # reaches the finder as /?q=example.com (its deep-link format).
+    assert "$is_args$args" in site
+
+
 def test_index_page_links_to_finder():
     index = _read("frontend", "frontend", "templates", "frontend", "index.html")
     assert '/finder' in index, "the home page must link to the RSS Finder entry point"
