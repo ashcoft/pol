@@ -123,6 +123,19 @@ http://localhost:8088
 http://192.168.0.10:8088
 ```
 
+## RSS Finder integration
+
+RSSPol is bundled with [RSS Finder](https://github.com/ashcoft/rss-finder) (`ashcoft/rss-finder`), a feed discovery app: enter a URL and it lists the RSS feeds the site already publishes, with a preview of each feed's latest items.
+
+When you run the stack with `docker compose up`, the `rssfinder` service is started alongside RSSPol and is reachable on port **3001** of the same host:
+
+- RSSPol: `http://localhost:8088`
+- RSS Finder: `http://localhost:3001` (also reachable via the **Find existing RSS feeds** link on the RSSPol home page, which goes through `/finder` and is redirected by nginx to port 3001)
+
+The two tools are complementary: use RSS Finder to discover feeds a site already publishes, and RSSPol's generator (setup wizard) to create a feed when none exists.
+
+If you prefer a different port, change the `3001:3000` mapping in `docker-compose.yaml`. For non-Docker setups, run RSS Finder separately (Node.js 22+ / pnpm, see its README) and point the home page link at your instance.
+
 ## Tests
 
 ```bash
