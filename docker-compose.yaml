@@ -38,19 +38,6 @@ services:
     volumes:
       - ./mysql:/var/lib/mysql
 
-  # RSS Finder (https://github.com/ashcoft/rss-finder): feed discovery UI.
-  # Complements RSSPol's generator: enter a URL and find feeds the site
-  # already publishes. Linked from the frontend via /finder (nginx redirects
-  # to this service on port 3001).
-  rssfinder:
-    image: ghcr.io/0x2E/rss-finder:latest
-    container_name: rssfinder
-    restart: unless-stopped
-    networks:
-      - politepol-network
-    ports:
-      - '3001:3000'
-
 networks:
   politepol-network:
     driver: 'bridge'
