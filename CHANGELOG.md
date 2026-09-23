@@ -1,5 +1,91 @@
 # CHANGELOG
 
+## v0.0.2 (2026-09-23)
+
+### Chore
+
+* chore: rename default branch master -&gt; main
+
+Co-authored-by: openhands &lt;openhands@all-hands.dev&gt; ([`13d3e93`](https://github.com/ashcoft/pol/commit/13d3e933b9f0b7f5f923fb33f25c27c6ac8cf730))
+
+### Documentation
+
+* docs: update readme for current repo layout and usage
+
+Co-authored-by: openhands &lt;openhands@all-hands.dev&gt; ([`9ec325f`](https://github.com/ashcoft/pol/commit/9ec325f1a783935a1035be93819b9c34b9edc437))
+
+### Fix
+
+* fix(pages): replace dangling settings.py symlink with a facade module
+
+The repo-root settings.py was a tracked symlink (mode 120000) to
+frontend/frontend/settings.py, which is git-ignored. On a fresh checkout the
+target does not exist, so the symlink dangled. Anything that resolves or
+archives every path in the tree failed on it:
+
+  github-pages 232 | Error: No such file or directory @ rb_check_realpath_internal - /github/workspace/settings.py
+
+Jekyll&#39;s EntryFilter calls realpath on every entry, and the Pages archive step
+runs tar --dereference, which both abort on a dangling link.
+
+Replace the symlink with a small tracked facade module that re-exports the
+generated settings, so the tree contains no dangling path. The downloader core
+still does &#39;from settings import ...&#39; at the repo root as before.
+
+.gitignore now ignores only the generated frontend/frontend/settings.py.
+
+Co-authored-by: openhands &lt;openhands@all-hands.dev&gt; ([`f16e047`](https://github.com/ashcoft/pol/commit/f16e047cddb7a03ca7e3623dc6c5ed40bf7ba581))
+
+### Unknown
+
+* Merge pull request #32 from ashcoft/fix/pages-build-nojekyll
+
+fix(pages): replace dangling settings.py symlink with a facade module ([`8d25cfc`](https://github.com/ashcoft/pol/commit/8d25cfc0c76e73bc338accce39ba77defc4ab8e5))
+
+* Merge pull request #31 from ashcoft/revert-pr-30
+
+Revert &#34;Integrate RSS Finder: feed discovery as a sidecar service&#34; (#30) ([`545dbec`](https://github.com/ashcoft/pol/commit/545dbec9c9299c4af55158ed0f81f75ce41fcf7e))
+
+* Revert &#34;Merge pull request #30 from ashcoft/feat/rss-finder-integration&#34;
+
+This reverts commit 42c083e513cc418de846fb9a26ae2f65aabca211, reversing
+changes made to 77ff8a63c755c777caf88a74b047beaa4cf12194. ([`8e69ba1`](https://github.com/ashcoft/pol/commit/8e69ba180c22d95ee28d937ba98df3444f1fe589))
+
+* Merge pull request #30 from ashcoft/feat/rss-finder-integration
+
+Integrate RSS Finder: feed discovery as a sidecar service ([`42c083e`](https://github.com/ashcoft/pol/commit/42c083e513cc418de846fb9a26ae2f65aabca211))
+
+* Preserve query string in /finder redirect so deep links work ([`7c765f6`](https://github.com/ashcoft/pol/commit/7c765f627ee8e4a68c38db359bc440ec7d2cdcdf))
+
+* Integrate RSS Finder: sidecar service, nginx entry point, UI link and tests ([`25e4520`](https://github.com/ashcoft/pol/commit/25e4520697b04b5b0f84e35ca81b25d3a99bfe9b))
+
+* Merge pull request #29 from ashcoft/update-readme
+
+docs: update readme for current repo layout and usage ([`77ff8a6`](https://github.com/ashcoft/pol/commit/77ff8a63c755c777caf88a74b047beaa4cf12194))
+
+* Apply suggestion from @cubic-dev-ai[bot]
+
+Co-authored-by: cubic-dev-ai[bot] &lt;191113872+cubic-dev-ai[bot]@users.noreply.github.com&gt; ([`8f037fd`](https://github.com/ashcoft/pol/commit/8f037fd86556be61eb8dd8355232ef785b1f8eb9))
+
+* Apply suggestion from @cubic-dev-ai[bot]
+
+Co-authored-by: cubic-dev-ai[bot] &lt;191113872+cubic-dev-ai[bot]@users.noreply.github.com&gt; ([`7386c7f`](https://github.com/ashcoft/pol/commit/7386c7fa3144da8a601b5dc3463c79cede832c80))
+
+* Merge pull request #26 from ashcoft/fix-sqlparse-cve-52
+
+Bump sqlparse to 0.6.0 (Dependabot alert #52) ([`2d1ee45`](https://github.com/ashcoft/pol/commit/2d1ee454793b5e9bd0842f5a5cda284465712dd8))
+
+* Bump sqlparse to 0.6.0 (Dependabot alert #52)
+
+sqlparse &lt;=0.5.5 has a CPU resource-exhaustion vulnerability in the
+ReindentFilter path (quadratic CPU consumption on crafted tuple lists,
+CVE: near-cap quadratic CPU consumption). Patched in 0.6.0.
+
+Verified: sqlparse 0.6.0 imports and formats correctly with Django
+5.2.16 (the app&#39;s pinned Django).
+
+Co-authored-by: openhands &lt;openhands@all-hands.dev&gt; ([`311ee81`](https://github.com/ashcoft/pol/commit/311ee81eff8a1cb7f7c07fc4acfe48675bcda701))
+
 ## v0.0.1 (2026-09-06)
 
 ### Fix
