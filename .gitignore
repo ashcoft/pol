@@ -1,4 +1,4 @@
-settings.py
+frontend/frontend/settings.py
 *.pyc
 frontend/frontend/static
 .*
