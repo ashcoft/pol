@@ -1,0 +1,47 @@
+OPTIONAL follow-up, not pushed anywhere.
+
+PR #53 (Django 6) passes CI without this, so it was deliberately left off the
+Renovate branch (Renovate owns renovate/django-6.x and force-pushes over it
+when it rebases). Apply it on main after #53 merges if you want the package
+metadata to stop advertising Python 3.9 support, which Django 6 does not
+provide: Django 6 declares "Requires-Python >=3.12".
+
+For the same reason the readme "Requirements" line ("Python 3.10+ (3.15
+recommended, used by CI and Docker)") is now inaccurate; that line is not
+covered by this patch.
+
+From 2ac6763009e221ae7afc1bae70f952640bfad7db Mon Sep 17 00:00:00 2001
+From: cline <cline@users.noreply.github.com>
+Date: Fri, 16 Oct 2026 03:35:03 +0000
+Subject: [PATCH] chore: require Python >=3.12 for Django 6 and re-run CI
+
+Django 6 declares 'Requires-Python >=3.12', but this project advertised
+requires-python '>=3.9' and its CI and Docker image were pinned to Python
+3.11, so installing the upgrade failed with:
+
+    ERROR: Ignored the following versions that require a different python version: 6.1.2 Requires-Python >=3.12
+    ERROR: Could not find a version that satisfies the requirement Django==6.1.2
+
+The Python 3.15 bump has since landed on main (PR #43), so CI and the image now
+satisfy Django's floor. Align the package metadata with it here and re-run the
+checks against the new base.
+---
+ pyproject.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pyproject.toml b/pyproject.toml
+index b9aa526..2dc10cd 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
+ name = "pol"
+ version = "0.0.2"
+ description = "RSS generator website"
+-requires-python = ">=3.9"
++requires-python = ">=3.12" # Django 6 declares Requires-Python >=3.12
+ 
+ [tool.semantic_release]
+ version_toml = ["pyproject.toml:project.version"]
+-- 
+2.39.5
+
