@@ -1,3 +1,8 @@
+NOTE: this is the "durable hardening" change for the CI lint job. It targets
+main as of a1af8e6, where the lint job still runs on Python 3.11. After PR #43
+merges, that job runs on Python 3.15, so the `python-version: "3.11"` context
+line below becomes "3.15" - apply with `git apply -3` or add the step by hand.
+
 From aecc1cc2e1cdaece485bcdb2ca72a95a5abf1c07 Mon Sep 17 00:00:00 2001
 From: cline <cline@users.noreply.github.com>
 Date: Fri, 16 Oct 2026 03:13:07 +0000
