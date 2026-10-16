@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.15"
 
       - name: Install system deps (mysqlclient build)
         run: |
@@ -45,7 +45,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.15"
 
       - name: Generate settings module
         run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
