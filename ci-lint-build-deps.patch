@@ -1,0 +1,41 @@
+From aecc1cc2e1cdaece485bcdb2ca72a95a5abf1c07 Mon Sep 17 00:00:00 2001
+From: cline <cline@users.noreply.github.com>
+Date: Fri, 16 Oct 2026 03:13:07 +0000
+Subject: [PATCH] fix(ci): install build deps in lint job so lxml compiles when
+ no wheel exists
+
+The 'Lint & static checks' job installs the full requirements.txt but, unlike
+the 'Python tests' job, never installed the C build dependencies. On Python
+3.11 that was masked because lxml ships prebuilt cp311 wheels; on Python 3.15
+no wheel is published yet, so pip falls back to compiling lxml from source and
+fails with:
+
+    Error: Please make sure the libxml2 and libxslt development packages are installed.
+
+Mirror the python-tests job and install build-essential/pkg-config plus the
+mysqlclient, libxml2/libxslt, libffi and openssl development headers before
+installing the Python requirements, so the lint job no longer depends on a
+wheel being published for the selected Python version.
+---
+ .github/workflows/ci.yml | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 33d993d..24e4735 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -47,6 +47,11 @@ jobs:
+         with:
+           python-version: "3.11"
+ 
++      - name: Install system deps (mysqlclient + lxml builds)
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y build-essential pkg-config default-libmysqlclient-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev
++
+       - name: Generate settings module
+         run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+ 
+-- 
+2.39.5
+
