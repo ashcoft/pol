@@ -35,7 +35,7 @@ jobs:
           root_options: "-v"
 
       - name: Publish to GitHub Releases
-        uses: python-semantic-release/publish-action@fa2bbbf8e61069551abd513fdc5627e14c8637c7 # v9.8.8
+        uses: python-semantic-release/publish-action@52da0d250f109b3b9210046d9dcbc77d037e1c88 # v9.21.2
         if: steps.release.outputs.released == 'true'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
