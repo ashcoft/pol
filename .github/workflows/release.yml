@@ -32,7 +32,7 @@ jobs:
         uses: python-semantic-release/python-semantic-release@b700dbeb1f431a0fcc30a79f3f0869407fe07278 # v10.7.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          root_options: "-v"
+          verbosity: "1"
 
       - name: Publish to GitHub Releases
         uses: python-semantic-release/publish-action@99d4062dd393b5a7a62c5fe9ed78fb364b5674f2 # v10.7.0
