@@ -4,8 +4,8 @@ import w3lib.html
 import six
 from lxml import etree
 from lxml import html as lxml_html
+import hashlib
 import re, sys
-from hashlib import md5
 
 from feedgenerator import Rss201rev2Feed, Enclosure
 import datetime
@@ -21,8 +21,19 @@ from .db import get_conn
 log = Logger()
 
 
+def _fingerprint(*parts):
+    """128-bit content fingerprint used to detect duplicate posts.
+
+    Fits the legacy CHAR(32) posts.md5sum column; not security sensitive."""
+    digest = hashlib.blake2b(digest_size=16)
+    for part in parts:
+        digest.update(part.encode('utf-8'))
+    return digest.hexdigest()
+
+
 def _as_text(value):
     return value.decode('utf-8') if isinstance(value, bytes) else value
+
 
 def _normalize_images(fragment, base_url):
     """Give lazy-loaded and relative <img> tags a usable absolute src."""
@@ -76,12 +87,8 @@ class Feed(object):
 
         new_post_cnt = 0
         for item in items:
-            #create md5
-            h = md5(b'', usedforsecurity=False)
-            for key in ['title', 'description', 'link']:
-                if key in item:
-                    h.update(item[key].encode('utf-8'))
-            item['md5'] = h.hexdigest()
+            item['md5'] = _fingerprint(
+                *[item[key] for key in ['title', 'description', 'link'] if key in item])
 
         #fetch dates from db
         fetched_dates = {}
@@ -169,7 +176,7 @@ class Feed(object):
             if 'link' in item:
                 link = item['link']
             else:
-                link = self.url_hash_regexp.sub('#' + md5((title+desc).encode('utf-8'), usedforsecurity=False).hexdigest(), feed_config['uri'])
+                link = self.url_hash_regexp.sub('#' + _fingerprint(title + desc), feed_config['uri'])
             feed.add_item(
                 title = title,
                 link = link,
