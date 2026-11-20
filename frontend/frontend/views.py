@@ -89,10 +89,12 @@ def setup_get_selected_ids(request):
 
 def _get_link_xpath(title_xpath):
     if title_xpath == './child::node()':
-        return './ancestor-or-self::node()/@href'
+        base = '.'
     else:
-        xpath = title_xpath[:len(title_xpath)-len('/child::node()')]
-        return xpath + '/descendant-or-self::node()/@href'
+        base = title_xpath[:len(title_xpath)-len('/child::node()')]
+    # The article link may be nested inside the title or wrap it.
+    return ('(%s/descendant-or-self::node()/@href'
+            ' | %s/ancestor-or-self::node()/@href)[1]') % (base, base)
 
 _BASIC_TITLE_ID=1
 _BASIC_DESCRIPTION_ID=2

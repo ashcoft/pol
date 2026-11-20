@@ -6,6 +6,7 @@ from lxml import etree
 from lxml import html as lxml_html
 import hashlib
 import re, sys
+from hashlib import md5
 
 from feedgenerator import Rss201rev2Feed, Enclosure
 import datetime
@@ -58,7 +59,8 @@ def _normalize_images(fragment, base_url):
             del img.attrib['loading']
     if not changed:
         return fragment
-    return ''.join(etree.tostring(child, encoding='unicode', method='html') for child in root)
+    return (root.text or '') + ''.join(
+        etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
 class Feed(object):
@@ -167,16 +169,20 @@ class Feed(object):
         )
         new_post_cnt = self.fill_time(feed_config['id'], items)
 
+        base_url = w3lib.html.get_base_url(page_unicode, feed_config['uri'])
+
         for item in items:
             title = item['title'] if 'title' in item else ''
             title = re.sub(r'<[^>]+>', '', title).strip()
             desc = item['description'] if 'description' in item else ''
-            desc = _normalize_images(desc, feed_config['uri'])
+            desc = _normalize_images(desc, base_url)
             time = item['time'] if 'time' in item else datetime.datetime.utcnow()
             if 'link' in item:
                 link = item['link']
             else:
-                link = self.url_hash_regexp.sub('#' + _fingerprint(title + desc), feed_config['uri'])
+                # md5 is the published identity of link-less items; keep it stable.
+                fragment = md5((title + desc).encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
+                link = self.url_hash_regexp.sub('#' + fragment, feed_config['uri'])
             feed.add_item(
                 title = title,
                 link = link,

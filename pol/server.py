@@ -224,8 +224,8 @@ class Downloader(object):
 
             self.request.setResponseCode(INTERNAL_SERVER_ERROR)
             if self.debug:
-                self.request.write('Downloader error: ' + error.getErrorMessage())
-                self.request.write('Traceback: ' + error.getTraceback())
+                self.request.write(('Downloader error: ' + str(error.getErrorMessage())).encode('utf-8'))
+                self.request.write(('Traceback: ' + str(error.getTraceback())).encode('utf-8'))
             else:
                 err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or contact us by email: <a href="mailto:politepol.com@gmail.com">politepol.com@gmail.com</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
                 self.request.write(err_message.encode('utf-8'))
@@ -275,23 +275,51 @@ class Downloader(object):
         self.request.write(response_str)
         self.request.finish()
 
+    # A small compressed body can expand to hundreds of megabytes.
+    MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
+
     def _decompress(self, response):
-        encoding = response.headers.get(b'Content-Encoding', b'')
-        if isinstance(encoding, str):
-            encoding = encoding.encode('utf-8')
-        encoding = encoding.lower()
-        body = response.body
-        if b'gzip' in encoding:
-            body = gzip.decompress(body)
-        elif b'deflate' in encoding:
-            body = zlib.decompress(body)
-        elif b'br' in encoding:
-            body = brotli.decompress(body)
-        else:
+        header = response.headers.get(b'Content-Encoding', b'')
+        if isinstance(header, str):
+            header = header.encode('utf-8')
+        codings = [c.strip().lower() for c in header.split(b',') if c.strip()]
+        if not codings:
             return response
+        body = response.body
+        # Content-Encoding lists the codings in the order they were applied.
+        for coding in reversed(codings):
+            body = self._decode_body(body, coding)
         headers = Headers({k: v for k, v in response.headers.items()
                            if k.lower() != b'content-encoding'})
-        return response.replace(body=body, headers=headers)
+        kwargs = {'body': body, 'headers': headers}
+        if isinstance(response, TextResponse):
+            # Let the decoded markup declare its own charset.
+            kwargs['encoding'] = None
+        return response.replace(**kwargs)
+
+    def _decode_body(self, body, coding):
+        if coding in (b'gzip', b'x-gzip'):
+            return self._bounded_decompress(zlib.decompressobj(16 + zlib.MAX_WBITS), body)
+        if coding == b'deflate':
+            try:
+                return self._bounded_decompress(zlib.decompressobj(zlib.MAX_WBITS), body)
+            except zlib.error:
+                return self._bounded_decompress(zlib.decompressobj(-zlib.MAX_WBITS), body)
+        if coding == b'br':
+            body = brotli.decompress(body)
+            if len(body) > self.MAX_DECOMPRESSED_SIZE:
+                raise ValueError('Decompressed response is too large')
+            return body
+        return body
+
+    def _bounded_decompress(self, decompressor, body):
+        out = decompressor.decompress(body, self.MAX_DECOMPRESSED_SIZE)
+        if decompressor.unconsumed_tail:
+            raise ValueError('Decompressed response is too large')
+        out += decompressor.flush()
+        if len(out) > self.MAX_DECOMPRESSED_SIZE:
+            raise ValueError('Decompressed response is too large')
+        return out
 
     def prepare_response_headers(self, headers):
         return {}
@@ -425,7 +453,7 @@ class Site(resource.Resource):
                 res = self.feed.getFeedData(feed_id)
 
                 if isinstance(res, six.string_types): # error message
-                    return res
+                    return res.encode('utf-8')
 
                 url, feed_config = res
                 self.startRequest(request, url, feed_config, sanitize=sanitize)

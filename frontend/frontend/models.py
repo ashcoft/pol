@@ -17,8 +17,8 @@ class FeedField(models.Model):
 
 class Post(models.Model):
     feed = models.ForeignKey(Feed, on_delete=models.CASCADE)
-    md5sum = models.CharField(max_length=32)
+    md5sum = models.BinaryField()
     created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        indexes = [models.Index(fields=['feed', 'md5sum'])]
+        indexes = [models.Index(fields=['feed', 'md5sum'], name='md5sum_index')]
