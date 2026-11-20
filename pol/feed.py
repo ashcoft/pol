@@ -77,7 +77,7 @@ class Feed(object):
         new_post_cnt = 0
         for item in items:
             #create md5
-            h = md5(b'')
+            h = md5(b'', usedforsecurity=False)
             for key in ['title', 'description', 'link']:
                 if key in item:
                     h.update(item[key].encode('utf-8'))
@@ -169,7 +169,7 @@ class Feed(object):
             if 'link' in item:
                 link = item['link']
             else:
-                link = self.url_hash_regexp.sub('#' + md5((title+desc).encode('utf-8')).hexdigest(), feed_config['uri'])
+                link = self.url_hash_regexp.sub('#' + md5((title+desc).encode('utf-8'), usedforsecurity=False).hexdigest(), feed_config['uri'])
             feed.add_item(
                 title = title,
                 link = link,
