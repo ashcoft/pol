@@ -1,7 +1,6 @@
 from __future__ import print_function
 from datetime import datetime
 from hashlib import sha256
-import gzip
 import json
 import pickle
 import zlib
