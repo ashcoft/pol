@@ -21,4 +21,4 @@ class Post(models.Model):
     created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        index_together = ['feed', 'md5sum']
+        indexes = [models.Index(fields=['feed', 'md5sum'])]

@@ -13,7 +13,7 @@ Including another URLconf
     1. Add an import:  from blog import urls as blog_urls
     2. Add a URL to urlpatterns:  url(r'^blog/', include(blog_urls))
 """
-from django.conf.urls import include, url
+from django.urls import re_path as url
 from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
 
@@ -24,7 +24,7 @@ urlpatterns = i18n_patterns(
     url(r'^setup$', views.setup, name='setup'),
     url(r'^preview/([0-9]+)$', views.preview, name='preview'),
     url(r'^contact$', views.contact, name='contact'),
-    url(r'^admin/', include(admin.site.urls)),
+    url(r'^admin/', admin.site.urls),
 )
 
 urlpatterns.append(url(r'^setup_get_selected_ids$', views.setup_get_selected_ids, name='setup_get_selected_ids'))

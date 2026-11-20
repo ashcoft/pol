@@ -3,6 +3,7 @@ import w3lib.html
 
 import six
 from lxml import etree
+from lxml import html as lxml_html
 import re, sys
 from hashlib import md5
 
@@ -19,6 +20,36 @@ from .db import get_conn
 
 log = Logger()
 
+
+def _as_text(value):
+    return value.decode('utf-8') if isinstance(value, bytes) else value
+
+def _normalize_images(fragment, base_url):
+    """Give lazy-loaded and relative <img> tags a usable absolute src."""
+    if '<img' not in fragment:
+        return fragment
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError):
+        return fragment
+    changed = False
+    for img in root.iter('img'):
+        src = img.get('src') or ''
+        lazy_src = img.get('data-src') or img.get('data-original') or img.get('data-lazy-src')
+        if lazy_src and (not src or src.startswith('data:')):
+            src = lazy_src
+            img.set('src', src)
+            changed = True
+        if src and base_url and not re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', src, re.I):
+            img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            changed = True
+        if 'loading' in img.attrib:
+            del img.attrib['loading']
+    if not changed:
+        return fragment
+    return ''.join(etree.tostring(child, encoding='unicode', method='html') for child in root)
+
+
 class Feed(object):
 
     url_hash_regexp = re.compile('(#.*)?$')
@@ -32,10 +63,10 @@ class Feed(object):
 
 
     def save_post(self, conn, created, feed_id, post_fields):
-        with conn as cur:
+        with conn.cursor() as cur:
             cur.execute("""insert into frontend_post (md5sum, created, feed_id)
                             values (unhex(%s), %s, %s)""", (post_fields['md5'], created, feed_id))
-            post_id = conn.insert_id()
+            post_id = cur.lastrowid
             log.info('Post saved id:{id!r}', id=post_id)
             return post_id
 
@@ -46,7 +77,7 @@ class Feed(object):
         new_post_cnt = 0
         for item in items:
             #create md5
-            h = md5('')
+            h = md5(b'')
             for key in ['title', 'description', 'link']:
                 if key in item:
                     h.update(item[key].encode('utf-8'))
@@ -55,7 +86,7 @@ class Feed(object):
         #fetch dates from db
         fetched_dates = {}
         with closing(get_conn(self.db_creds)) as conn:
-            with conn as cur:
+            with conn.cursor() as cur:
                 quoted_hashes = ','.join(["unhex('%s')" % (i['md5']) for i in items])
 
                 cur.execute("""select lower(hex(p.md5sum)), p.created, p.id
@@ -131,7 +162,9 @@ class Feed(object):
 
         for item in items:
             title = item['title'] if 'title' in item else ''
+            title = re.sub(r'<[^>]+>', '', title).strip()
             desc = item['description'] if 'description' in item else ''
+            desc = _normalize_images(desc, feed_config['uri'])
             time = item['time'] if 'time' in item else datetime.datetime.utcnow()
             if 'link' in item:
                 link = item['link']
@@ -151,23 +184,24 @@ class Feed(object):
         # get url, xpathes
         feed = {}
 
-        with closing(get_conn(self.db_creds, dict_result=True)) as conn, conn as cur:
-            cur.execute("""select f.uri, f.xpath as feed_xpath, fi.name, ff.xpath, fi.required
-                           from frontend_feed f
-                           right join frontend_feedfield ff on ff.feed_id=f.id
-                           left join frontend_field fi on fi.id=ff.field_id
-                           where f.id=%s""", (feed_id,))
-            rows = cur.fetchall()
+        with closing(get_conn(self.db_creds, dict_result=True)) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""select f.uri, f.xpath as feed_xpath, fi.name, ff.xpath, fi.required
+                               from frontend_feed f
+                               right join frontend_feedfield ff on ff.feed_id=f.id
+                               left join frontend_field fi on fi.id=ff.field_id
+                               where f.id=%s""", (feed_id,))
+                rows = cur.fetchall()
 
-            for row in rows:
-                if not feed:
-                    feed['id'] = feed_id
-                    feed['uri'] = row['uri']
-                    feed['xpath'] = row['feed_xpath'].decode('utf-8')
-                    feed['fields'] = {}
-                    feed['required'] = {}
-                feed['fields'][row['name']] = row['xpath'].decode('utf-8')
-                feed['required'][row['name']] = row['required']
+                for row in rows:
+                    if not feed:
+                        feed['id'] = feed_id
+                        feed['uri'] = row['uri']
+                        feed['xpath'] = _as_text(row['feed_xpath'])
+                        feed['fields'] = {}
+                        feed['required'] = {}
+                    feed['fields'][row['name']] = _as_text(row['xpath'])
+                    feed['required'][row['name']] = row['required']
 
         if feed:
             return [feed['uri'], feed]

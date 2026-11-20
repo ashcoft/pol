@@ -1,13 +1,16 @@
 from __future__ import print_function
 from datetime import datetime
 from hashlib import sha256
+import gzip
 import json
 import pickle
+import zlib
 import stat
 import time, sys, traceback
 import re
 import os
 
+import brotli
 import six
 from lxml import etree
 
@@ -22,8 +25,6 @@ twisted_headers = Headers
 from twisted.logger import Logger
 
 from scrapy.http.response.text import TextResponse
-from scrapy.downloadermiddlewares.httpcompression import HttpCompressionMiddleware
-from scrapy.http.request import Request
 from scrapy.http import Headers
 from scrapy.responsetypes import responsetypes
 from scrapy.core.downloader.contextfactory import ScrapyClientContextFactory
@@ -37,6 +38,10 @@ from twisted.logger import Logger
 
 
 log = Logger()
+
+
+def _text(value):
+    return value.decode('utf-8', 'replace') if isinstance(value, bytes) else value
 
 class Downloader(object):
 
@@ -77,7 +82,7 @@ class Downloader(object):
             elif six.PY3:
                 for k, v in headers.items():
                     for vv in v:
-                        f.write('%s: %s\n' % (k, vv))
+                        f.write('%s: %s\n' % (_text(k), _text(vv)))
 
             if six.PY2:
                 f.write('\n\n' + etree.tostring(tree, encoding='utf-8', method='html'))
@@ -98,6 +103,15 @@ class Downloader(object):
                 # set tag-id attribute
                 bad.attrib['tag-id'] = str(i)
                 i += 1
+
+            # promote lazy-loaded images to a real src
+            if bad.tag == 'img':
+                lazy_src = (bad.attrib.get('data-src') or bad.attrib.get('data-original')
+                            or bad.attrib.get('data-lazy-src'))
+                src = bad.attrib.get('src', '')
+                if lazy_src and (not src or src.startswith('data:')):
+                    bad.attrib['src'] = lazy_src
+                bad.attrib.pop('loading', None)
 
             # sanitize anchors
             if sanitize_anchors and bad.tag == 'a' and 'href' in bad.attrib:
@@ -162,9 +176,12 @@ class Downloader(object):
 
     def buildScrapyResponse(self, response, body, url):
         status = response.code
-        headers = Headers({k:','.join(v) for k,v in response.headers.getAllRawHeaders()})
-        respcls = responsetypes.from_args(headers=headers, url=url)
-        return respcls(url=url, status=status, headers=headers, body=body)
+        raw_headers = {k: b','.join(v) for k, v in response.headers.getAllRawHeaders()}
+        # Content-Encoding makes Scrapy fall back to a plain Response (the body is
+        # still compressed here), so pick the class from Content-Type only.
+        sniff_headers = {k: v for k, v in raw_headers.items() if k.lower() != b'content-encoding'}
+        respcls = responsetypes.from_args(headers=sniff_headers, url=url)
+        return respcls(url=url, status=status, headers=Headers(raw_headers), body=body)
 
     def error_html(self, msg):
         return "<html><body>%s</body></html>" % msg.replace("\n", "<br/>\n")
@@ -199,8 +216,9 @@ class Downloader(object):
                         )
                 else:
                     sys.stderr.write('\n'.join(
-                        [str(datetime.utcnow()), self.request.uri, self.url, 'Downloader error: ' + error.getErrorMessage(),
-                         'Traceback: ' + error.getTraceback()]))
+                        [str(datetime.utcnow()), str(self.request.uri), str(self.url),
+                         'Downloader error: ' + str(error.getErrorMessage()),
+                         'Traceback: ' + str(error.getTraceback())]))
             except:
                 traceback.print_exc(file=sys.stdout)
 
@@ -210,7 +228,7 @@ class Downloader(object):
                 self.request.write('Traceback: ' + error.getTraceback())
             else:
                 err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or contact us by email: <a href="mailto:politepol.com@gmail.com">politepol.com@gmail.com</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
-                self.request.write(err_message)
+                self.request.write(err_message.encode('utf-8'))
 
             self.request.finish()
 
@@ -224,6 +242,8 @@ class Downloader(object):
 
     def downloadDone(self, response_str):
         url = self.response.request.absoluteURI
+        if isinstance(url, bytes):
+            url = url.decode('utf-8', 'replace')
 
         print('Response <%s> ready (%s bytes)' % (url, len(response_str)))
         sresponse = self.buildScrapyResponse(self.response, response_str, url)
@@ -235,13 +255,13 @@ class Downloader(object):
             self.run_memon()
 
     def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
-        sresponse = HttpCompressionMiddleware().process_response(Request(sresponse.url), sresponse, None)
+        sresponse = self._decompress(sresponse)
 
         response_headers = self.prepare_response_headers(sresponse.headers)
 
         if (isinstance(sresponse, TextResponse)):
             ip = self.request.getHeader('x-real-ip') or self.request.client.host
-            response_str = self.prepare_response_str(sresponse.selector, sresponse.headers, sresponse.body_as_unicode(), sresponse.url, ip)
+            response_str = self.prepare_response_str(sresponse.selector, sresponse.headers, sresponse.text, sresponse.url, ip)
             if self.feed_config:
                 response_headers = {b"Content-Type": b'text/xml; charset=utf-8'}
         else: # images and such
@@ -250,8 +270,28 @@ class Downloader(object):
         for k, v in response_headers.items():
             self.request.setHeader(k, v)
 
+        if isinstance(response_str, str):
+            response_str = response_str.encode('utf-8')
         self.request.write(response_str)
         self.request.finish()
+
+    def _decompress(self, response):
+        encoding = response.headers.get(b'Content-Encoding', b'')
+        if isinstance(encoding, str):
+            encoding = encoding.encode('utf-8')
+        encoding = encoding.lower()
+        body = response.body
+        if b'gzip' in encoding:
+            body = gzip.decompress(body)
+        elif b'deflate' in encoding:
+            body = zlib.decompress(body)
+        elif b'br' in encoding:
+            body = brotli.decompress(body)
+        else:
+            return response
+        headers = Headers({k: v for k, v in response.headers.items()
+                           if k.lower() != b'content-encoding'})
+        return response.replace(body=body, headers=headers)
 
     def prepare_response_headers(self, headers):
         return {}
@@ -281,7 +321,7 @@ class Downloader(object):
 class Site(resource.Resource):
     isLeaf = True
 
-    feed_regexp = re.compile(b'^/feed/(\d{1,10})')
+    feed_regexp = re.compile(rb'^/feed/(\d{1,10})')
 
 
     def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE):
@@ -299,6 +339,8 @@ class Site(resource.Resource):
         self.downloadercls = downloadercls or Downloader
 
     def startRequest(self, request, url, feed_config = None, selector_defer=None, sanitize=False):
+        if isinstance(url, bytes):
+            url = url.decode('utf-8', 'replace')
         downloader = self.downloadercls(self.feed, self.debug, self.snapshot_dir, self.stat_tool, self.memon,
                                         request=request, url=url, feed_config=feed_config,
                                         selector_defer=selector_defer, sanitize=sanitize, max_size=self.max_size)
@@ -319,12 +361,12 @@ class Site(resource.Resource):
             )
 
             d = agent.request(
-                'GET',
-                url,
+                b'GET',
+                url.encode('utf-8'),
                 twisted_headers({
-                    'Accept': ['text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
-                    'Accept-Encoding': ['gzip, deflate, sdch'],
-                    'User-Agent': [self.user_agent]
+                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
+                    b'Accept-Encoding': [b'gzip, deflate, sdch'],
+                    b'User-Agent': [self.user_agent.encode('utf-8')]
                 }),
                 None
             )
@@ -371,7 +413,7 @@ class Site(resource.Resource):
             return NOT_DONE_YET
         elif self.feed_regexp.match(request.uri) is not None: # feed
 
-            feed_id = self.feed_regexp.match(request.uri).groups()[0]
+            feed_id = self.feed_regexp.match(request.uri).groups()[0].decode('ascii')
             sanitize = request.uri.endswith(b'?sanitize=Y')
 
             time_left = self.limiter.check_request_time_limit(request.uri) if self.limiter else 0
@@ -389,7 +431,7 @@ class Site(resource.Resource):
                 self.startRequest(request, url, feed_config, sanitize=sanitize)
                 return NOT_DONE_YET
         else: # neither page and feed
-            return 'Url is invalid'
+            return b'Url is invalid'
 
 
 class Server(object):
