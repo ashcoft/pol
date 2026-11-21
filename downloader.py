@@ -17,6 +17,7 @@ reader = ReaderEndpoints(
     timeout=getattr(pol_settings, 'READER_TIMEOUT', 20),
     max_size=getattr(pol_settings, 'READER_MAX_SIZE', 8 * 1024 * 1024),
     verify_ssl=getattr(pol_settings, 'READER_VERIFY_SSL', True),
+    allow_private=True if getattr(pol_settings, 'READER_ALLOW_PRIVATE', False) else None,
 )
 
 Server(port, DATABASES['default'], SNAPSHOT_DIR, DOWNLOADER_USER_AGENT,

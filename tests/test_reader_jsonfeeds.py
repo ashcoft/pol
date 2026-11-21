@@ -102,3 +102,27 @@ def test_rules_for_url_uses_path_patterns():
     }
     assert rules_for_url(rules, 'https://api.example.com/v1') is rules['api']
     assert rules_for_url(rules, 'https://other.example.com/') is None
+
+
+def test_json_rules_accept_star_wildcard():
+    rules = Rules.from_mapping({
+        'mode': 'json',
+        'items': 'data.posts[*]',
+        'item_title': 'title',
+        'item_link': 'url',
+    })
+    feed = parse_custom(json.dumps(JSON_DOC), 'https://example.com/api', rules)
+    assert [item.title for item in feed.items] == ['One', 'Two']
+
+
+def test_xml_mode_strips_encoding_declaration():
+    xml = ('<?xml version="1.0" encoding="iso-8859-1"?>'
+           '<root><item><title>café</title><link>/x</link></item></root>').encode('iso-8859-1')
+    rules = Rules.from_mapping({
+        'mode': 'xml',
+        'items': '//item',
+        'item_title': 'title',
+        'item_link': 'link',
+    })
+    feed = parse_custom(xml, 'https://example.com/x', rules)
+    assert feed.items[0].title == 'café'

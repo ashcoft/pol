@@ -3,7 +3,9 @@ import os
 import pytest
 
 from pol.reader.cache import (
+    BaseCache,
     DiskCache,
+    FallbackCache,
     HttpCache,
     MemoryCache,
     NullCache,
@@ -113,3 +115,36 @@ def test_fetcher_cache_only_skips_network(http_server):
 
     with pytest.raises(Exception):
         offline.fetch(http_server.base_url + '/missing.xml')
+
+
+class _FailingCache(BaseCache):
+    def get(self, key, default=None):
+        raise ConnectionError('backend down')
+
+    def set(self, key, value, ttl=None):
+        raise ConnectionError('backend down')
+
+    def delete(self, key):
+        raise ConnectionError('backend down')
+
+    def clear(self):
+        raise ConnectionError('backend down')
+
+
+def test_fallback_cache_switches_to_memory():
+    cache = FallbackCache(_FailingCache(), MemoryCache())
+    cache.set('a', 1)
+    assert cache.get('a') == 1
+
+
+def test_make_cache_redis_unavailable_falls_back():
+    pytest.importorskip('redis')
+    cache = make_cache('redis', url='redis://127.0.0.1:1/0')
+    cache.set('a', 1)
+    assert cache.get('a') == 1
+
+
+def test_disk_cache_roundtrips_bytes(tmp_path):
+    cache = DiskCache(str(tmp_path))
+    cache.set('body', {'body': b'\x00\xff\x01', 'status': 200})
+    assert cache.get('body') == {'body': b'\x00\xff\x01', 'status': 200}

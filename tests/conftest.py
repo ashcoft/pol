@@ -43,6 +43,12 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+@pytest.fixture(autouse=True)
+def _allow_private_reader_urls(monkeypatch):
+    # The tests use 127.0.0.1 fixtures; production keeps the SSRF guard on.
+    monkeypatch.setenv('POL_READER_ALLOW_PRIVATE', '1')
+
+
 @pytest.fixture
 def http_server():
     server = ThreadingHTTPServer(('127.0.0.1', 0), _Handler)

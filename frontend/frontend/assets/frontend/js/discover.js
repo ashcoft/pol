@@ -22,7 +22,12 @@
         var currentFeedUrl = '';
         var lastTrigger = null;
         var toastTimer = null;
-        var previewToken = 0;
+        var previewRequest = null;
+        var previewSeq = 0;
+
+        function el(tag) {
+            return $(document.createElement(tag));
+        }
 
         function showToast(message) {
             $toast.text(message).addClass('is-visible');
@@ -34,7 +39,7 @@
 
         function copyText(text) {
             function fallback() {
-                var $area = $('<textarea>').val(text).appendTo('body').select();
+                var $area = el('textarea').val(text).appendTo('body').select();
                 try {
                     document.execCommand('copy');
                     showToast('Copied to clipboard!');
@@ -74,21 +79,42 @@
             return isNaN(date.getTime()) ? value : date.toLocaleString();
         }
 
+        function sanitizeSummary(html) {
+            var doc = new DOMParser().parseFromString('<div>' + (html || '') + '</div>', 'text/html');
+            var wrapper = doc.body.firstChild || document.createElement('div');
+            $(wrapper).find('script, style, iframe, object, embed, form, input, button, svg, canvas').remove();
+            $(wrapper).find('*').addBack().each(function () {
+                var attributes = this.attributes;
+                if (!attributes) {
+                    return;
+                }
+                for (var i = attributes.length - 1; i >= 0; i--) {
+                    var name = attributes[i].name.toLowerCase();
+                    var value = (attributes[i].value || '').trim().toLowerCase();
+                    if (name.indexOf('on') === 0 || name === 'srcdoc' ||
+                        ((name === 'href' || name === 'src') && value.indexOf('javascript:') === 0)) {
+                        this.removeAttribute(attributes[i].name);
+                    }
+                }
+            });
+            return wrapper;
+        }
+
         function renderPreview(data) {
             $panelBody.empty();
             var items = (data && data.items) || [];
             if (!items.length) {
-                $('<p>').addClass('muted').text('No items in this feed.').appendTo($panelBody);
+                el('p').addClass('muted').text('No items in this feed.').appendTo($panelBody);
                 return;
             }
 
             $.each(items, function (_index, item) {
-                var $article = $('<article>').addClass('feed-preview-item');
-                var $title = $('<h4>').addClass('feed-preview-item-title');
+                var $article = el('article').addClass('feed-preview-item');
+                var $title = el('h4').addClass('feed-preview-item-title');
 
                 var href = safeUrl(item.link);
                 if (href) {
-                    $('<a>').attr({
+                    el('a').attr({
                         href: href,
                         target: '_blank',
                         rel: 'noopener noreferrer'
@@ -99,13 +125,13 @@
                 $article.append($title);
 
                 if (item.date) {
-                    $('<div>').addClass('feed-preview-meta')
+                    el('div').addClass('feed-preview-meta')
                         .text(formatDate(item.date)).appendTo($article);
                 }
 
                 var image = safeUrl(item.image);
                 if (image) {
-                    $('<img>').addClass('feed-preview-image').attr({
+                    el('img').addClass('feed-preview-image').attr({
                         src: image,
                         alt: '',
                         loading: 'lazy'
@@ -113,8 +139,10 @@
                 }
 
                 if (item.summary) {
-                    // The server sanitises summaries before returning them.
-                    $('<div>').addClass('feed-preview-summary').html(item.summary).appendTo($article);
+                    // The server sanitises summaries; this is defence in depth.
+                    el('div').addClass('feed-preview-summary')
+                        .append($(sanitizeSummary(item.summary)).contents())
+                        .appendTo($article);
                 }
 
                 $article.appendTo($panelBody);
@@ -122,24 +150,29 @@
         }
 
         function openPreview(feed, trigger) {
-            var token = ++previewToken;
+            var sequence = ++previewSeq;
+            if (previewRequest) {
+                previewRequest.abort();
+                previewRequest = null;
+            }
+
             currentFeedUrl = feed.url;
             lastTrigger = trigger || null;
             $panelTitle.text(feed.title || feed.url);
             $panelFull.attr('href', '/read?url=' + encodeURIComponent(feed.url) + '&format=html');
-            $panelBody.html('<p class="muted">Loading feed…</p>');
+            $panelBody.empty().append(el('p').addClass('muted').text('Loading feed…'));
 
             $overlay.addClass('is-open').attr('aria-hidden', 'false');
             $panel.addClass('is-open').attr('aria-hidden', 'false');
             $('body').addClass('feed-preview-open');
             $('#feed-preview-close').trigger('focus');
 
-            $.ajax({
+            previewRequest = $.ajax({
                 url: '/api/feed-preview',
                 data: {url: feed.url},
                 dataType: 'json'
             }).done(function (data) {
-                if (token !== previewToken) {
+                if (sequence !== previewSeq) {
                     return;
                 }
                 if (data && data.title && !feed.title) {
@@ -147,7 +180,7 @@
                 }
                 renderPreview(data);
             }).fail(function (xhr) {
-                if (token !== previewToken) {
+                if (sequence !== previewSeq || xhr.statusText === 'abort') {
                     return;
                 }
                 var message = 'Could not load this feed.';
@@ -156,13 +189,20 @@
                 } catch (ignore) {
                     // keep the generic message
                 }
-                $panelBody.empty();
-                $('<p>').addClass('muted').text(message).appendTo($panelBody);
+                $panelBody.empty().append(el('p').addClass('muted').text(message));
+            }).always(function () {
+                if (sequence === previewSeq) {
+                    previewRequest = null;
+                }
             });
         }
 
         function closePreview() {
-            previewToken++;
+            previewSeq += 1;
+            if (previewRequest) {
+                previewRequest.abort();
+                previewRequest = null;
+            }
             $panel.removeClass('is-open').attr('aria-hidden', 'true');
             $overlay.removeClass('is-open').attr('aria-hidden', 'true');
             $('body').removeClass('feed-preview-open');
@@ -171,6 +211,11 @@
                 lastTrigger.focus();
                 lastTrigger = null;
             }
+        }
+
+        function panelFocusables() {
+            return $panel.find('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')
+                .filter(':visible');
         }
 
         function renderResults(feeds) {
@@ -189,31 +234,31 @@
                 }
                 seen[feed.url] = true;
 
-                var $item = $('<li>').addClass('feed-result');
-                var $head = $('<div>').addClass('feed-result-head');
-                $('<a>').addClass('feed-result-title').attr({
+                var $item = el('li').addClass('feed-result');
+                var $head = el('div').addClass('feed-result-head');
+                el('a').addClass('feed-result-title').attr({
                     href: feed.url,
                     target: '_blank',
                     rel: 'noopener'
                 }).text(feed.title || feed.url).appendTo($head);
                 if (feed.type) {
-                    $('<span>').addClass('feed-result-type').text(feed.type).appendTo($head);
+                    el('span').addClass('feed-result-type').text(feed.type).appendTo($head);
                 }
                 $item.append($head);
-                $('<div>').addClass('feed-result-url').text(feed.url).appendTo($item);
+                el('div').addClass('feed-result-url').text(feed.url).appendTo($item);
 
-                var $actions = $('<div>').addClass('feed-result-actions');
-                $('<button>').attr('type', 'button')
+                var $actions = el('div').addClass('feed-result-actions');
+                el('button').attr('type', 'button')
                     .addClass('btn btn-mini feed-preview-trigger')
                     .text('Preview')
                     .data('feed', feed)
                     .appendTo($actions);
-                $('<button>').attr('type', 'button')
+                el('button').attr('type', 'button')
                     .addClass('btn btn-mini feed-copy-trigger')
                     .text('Copy')
                     .data('url', feed.url)
                     .appendTo($actions);
-                $('<a>').addClass('btn btn-mini').attr({
+                el('a').addClass('btn btn-mini').attr({
                     href: feed.url,
                     target: '_blank',
                     rel: 'noopener'
@@ -296,14 +341,12 @@
             if (event.key !== 'Tab') {
                 return;
             }
-            // The panel is aria-modal, so focus has to stay inside it.
-            var focusable = $panel.find('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
-                .filter(':visible');
-            if (!focusable.length) {
+            var $focusable = panelFocusables();
+            if (!$focusable.length) {
                 return;
             }
-            var first = focusable.get(0);
-            var last = focusable.get(focusable.length - 1);
+            var first = $focusable[0];
+            var last = $focusable[$focusable.length - 1];
             if (event.shiftKey && document.activeElement === first) {
                 event.preventDefault();
                 last.focus();

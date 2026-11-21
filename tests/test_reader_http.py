@@ -3,10 +3,41 @@ import zlib
 
 import pytest
 
-from pol.reader.errors import FetchError
-from pol.reader.http import Fetcher
+from pol.reader.cache import HttpCache, MemoryCache
+from pol.reader.errors import FetchError, InvalidURLError
+from pol.reader.http import Fetcher, ensure_public_url
 
 from .conftest import RSS_FEED
+
+
+@pytest.mark.parametrize('url', [
+    'http://127.0.0.1/',
+    'http://10.0.0.1/',
+    'http://169.254.169.254/latest/meta-data/',
+    'http://192.168.1.1/',
+    'http://0.0.0.0/',
+    'http://[::1]/',
+])
+def test_ensure_public_url_blocks_private_destinations(url):
+    with pytest.raises(InvalidURLError):
+        ensure_public_url(url)
+
+
+def test_ensure_public_url_allows_public_literal():
+    ensure_public_url('http://8.8.8.8/')
+
+
+def test_fetcher_blocks_private_destinations_by_default(http_server):
+    http_server.routes['/feed.xml'] = (200, {'Content-Type': 'application/rss+xml'}, RSS_FEED)
+    fetcher = Fetcher(timeout=5, allow_private=False)
+    with pytest.raises(InvalidURLError):
+        fetcher.fetch(http_server.base_url + '/feed.xml')
+
+
+def test_fetcher_can_opt_in_to_private_destinations(http_server):
+    http_server.routes['/feed.xml'] = (200, {'Content-Type': 'application/rss+xml'}, RSS_FEED)
+    fetcher = Fetcher(timeout=5, allow_private=True)
+    assert fetcher.fetch(http_server.base_url + '/feed.xml').ok
 
 
 def test_fetch_follows_http_redirects(http_server):
@@ -96,3 +127,33 @@ def test_fetch_http_error_is_returned_not_raised(http_server):
 def test_fetch_connection_error_raises():
     with pytest.raises(FetchError):
         Fetcher(timeout=0.5).fetch('http://127.0.0.1:1/never')
+
+
+def test_fetch_decompresses_brotli(http_server):
+    import brotli
+
+    http_server.routes['/brotli.xml'] = (
+        200, {'Content-Type': 'application/rss+xml', 'Content-Encoding': 'br'},
+        brotli.compress(RSS_FEED.encode()))
+    response = Fetcher(timeout=5, allow_private=True).fetch(
+        http_server.base_url + '/brotli.xml')
+    assert b'Example feed' in response.body
+
+
+def test_offline_fetch_follows_cached_meta_refresh(http_server):
+    http_server.routes.update({
+        '/refresh': (200, {'Content-Type': 'text/html'},
+                     '<meta http-equiv="refresh" content="0; url=/feed.xml">'),
+        '/feed.xml': (200, {'Content-Type': 'application/rss+xml'}, RSS_FEED),
+    })
+    cache = HttpCache(MemoryCache(), ttl=60)
+    online = Fetcher(timeout=5, cache=cache, allow_private=True)
+    assert online.fetch(http_server.base_url + '/refresh').is_feed
+
+    offline = Fetcher(timeout=5, cache=cache, cache_only=True, allow_private=True)
+    assert offline.fetch(http_server.base_url + '/refresh').is_feed
+
+
+def test_offline_resolve_does_not_touch_the_network():
+    url = 'http://127.0.0.1:1/never'
+    assert Fetcher(cache_only=True, allow_private=True).resolve(url) == url

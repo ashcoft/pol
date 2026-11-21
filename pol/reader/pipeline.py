@@ -16,7 +16,7 @@ from .model import Feed
 from .output import format_feed
 from .parse import absolutize, html_to_text, parse_feed
 from .readability import extract
-from .urls import clean_url, normalize_url
+from .urls import clean_url, is_http_url, normalize_url
 
 
 @dataclass
@@ -53,6 +53,7 @@ class Options:
     redis_url: str | None = None
     verify_ssl: bool = True
     follow_meta: bool = True
+    allow_private: bool | None = None
 
 
 @dataclass
@@ -79,6 +80,7 @@ def _build_fetcher(options):
         verify_ssl=options.verify_ssl,
         allow_meta_refresh=options.follow_meta,
         cache_only=options.cache_only,
+        allow_private=options.allow_private,
     )
 
 
@@ -115,9 +117,15 @@ def _feed_from_page(response, fetcher, options):
     if not response.is_html:
         raise ParseError('Document is neither a feed nor an HTML page')
     refs = discover_from_html(response.text, response.url)
-    if not refs:
-        refs = common_candidates(response.url)
-    for ref in refs[:8]:
+    refs.extend(common_candidates(response.url))
+    seen = set()
+    candidates = []
+    for ref in refs:
+        if ref.url in seen:
+            continue
+        seen.add(ref.url)
+        candidates.append(ref)
+    for ref in candidates[:12]:
         try:
             candidate = fetcher.fetch(ref.url, force=options.force)
             if not candidate.ok:
@@ -147,7 +155,7 @@ def _extract_with_xpath(html_text, url, xpath):
 def _fill_fulltext(feed, fetcher, options):
     limit = max(0, int(options.max_items))
     for item in feed.items[:limit]:
-        if not item.link:
+        if not item.link or not is_http_url(item.link):
             continue
         if not options.clip and len(html_to_text(item.content or item.summary)) > 1000:
             continue
@@ -169,9 +177,12 @@ def _fill_fulltext(feed, fetcher, options):
 def _resolve_links(feed, fetcher, options):
     limit = max(0, int(options.max_items))
     for item in feed.items[:limit]:
-        if not item.link:
+        if not item.link or not is_http_url(item.link):
             continue
-        item.link = fetcher.resolve(clean_url(item.link))
+        try:
+            item.link = fetcher.resolve(clean_url(item.link))
+        except InvalidURLError:
+            continue
 
 
 def _matches(item, needle):

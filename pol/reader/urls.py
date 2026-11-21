@@ -7,7 +7,7 @@ prefix, and only http(s) URLs are accepted.
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, unquote_plus, urlsplit, urlunsplit
 
 from .errors import InvalidURLError
 
@@ -83,14 +83,30 @@ def is_tracking_param(name: str) -> bool:
 
 
 def strip_tracking(url: str) -> str:
-    """Remove campaign/analytics query parameters while keeping the rest."""
+    """Remove campaign/analytics query parameters while keeping the rest.
+
+    Retained parameters are copied as their original encoded segments so that
+    signed URLs are not invalidated by a decode/re-encode round trip.
+    """
     parts = urlsplit(url)
     if not parts.query:
         return url
-    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-            if not is_tracking_param(k)]
-    query = urlencode(kept, doseq=True)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+    kept = []
+    removed = False
+    for segment in parts.query.split('&'):
+        if not segment:
+            continue
+        name = unquote_plus(segment.split('=', 1)[0])
+        if is_tracking_param(name):
+            removed = True
+            continue
+        kept.append(segment)
+
+    if not removed:
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, parts.path,
+                       '&'.join(kept), parts.fragment))
 
 
 def unwrap_redirector(url: str) -> str:
@@ -109,12 +125,19 @@ def unwrap_redirector(url: str) -> str:
         target = next((values[k] for k in keys if values.get(k)), '')
 
     target = unquote(target).strip()
-    if not target:
+    if not target or not _looks_like_target_url(target):
         return url
     try:
         return normalize_url(target)
     except InvalidURLError:
         return url
+
+
+def _looks_like_target_url(value: str) -> bool:
+    if value.lower().startswith(('http://', 'https://')):
+        return True
+    host = value.split('/', 1)[0]
+    return '.' in host and ' ' not in host
 
 
 def clean_url(url: str) -> str:

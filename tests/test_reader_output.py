@@ -88,3 +88,53 @@ def test_jsonp_rejects_invalid_callbacks(callback):
 def test_unknown_format_raises():
     with pytest.raises(ValueError):
         format_feed(_feed(), 'yaml')
+
+
+def test_html_output_drops_unsafe_link_schemes():
+    feed = _feed()
+    feed.link = 'javascript:alert(1)'
+    feed.items[0].link = 'javascript:alert(2)'
+    html = to_html(feed)
+    assert 'javascript:' not in html
+
+
+def test_rss_output_drops_unsafe_link_schemes():
+    feed = _feed()
+    feed.link = 'javascript:alert(1)'
+    feed.items[0].link = 'javascript:alert(2)'
+    rss = to_rss(feed)
+    assert 'javascript:' not in rss
+
+
+def test_json_output_drops_unsafe_link_schemes():
+    feed = _feed()
+    feed.link = 'javascript:alert(1)'
+    feed.items[0].link = 'javascript:alert(2)'
+    data = json.loads(to_json(feed))
+    assert 'home_page_url' not in data
+    assert 'url' not in data['items'][0]
+
+
+def test_csv_neutralizes_formula_cells():
+    import csv
+    import io
+
+    feed = _feed()
+    feed.items[0].title = '=1+1'
+    feed.items[0].author = '@cmd'
+    feed.items[0].content = '=SUM(A1)'
+    rows = list(csv.reader(io.StringIO(to_csv(feed))))
+    assert rows[1][0] == "'=1+1"
+    assert rows[1][3] == "'@cmd"
+    assert rows[1][4] == "'=SUM(A1)"
+
+
+def test_rss_preserves_cdata_terminator():
+    from pol.reader.parse import parse_feed
+
+    feed = _feed()
+    feed.items[0].summary = 'a]]>b'
+    feed.items[0].content = 'x]]>y'
+    parsed = parse_feed(to_rss(feed).encode(), 'https://example.com/feed')
+    assert parsed.items[0].summary == 'a]]>b'
+    assert parsed.items[0].content == 'x]]>y'

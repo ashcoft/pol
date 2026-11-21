@@ -142,3 +142,22 @@ def test_process_raises_on_http_error(http_server):
     with pytest.raises(FetchError) as excinfo:
         process(http_server.base_url + '/missing')
     assert excinfo.value.status == 404
+
+
+def test_process_skips_non_http_item_links(http_server):
+    feed = RSS_FEED.replace('<link>/article</link>', '<link>mailto:x@example.com</link>')
+    http_server.routes['/feed.xml'] = (200, {'Content-Type': 'application/rss+xml'}, feed)
+    result = process(http_server.base_url + '/feed.xml',
+                     options=Options(fulltext=True, resolve=True))
+    assert result.feed.items[0].link == 'mailto:x@example.com'
+
+
+def test_process_falls_back_after_dead_advertised_feed(http_server):
+    http_server.routes.update({
+        '/': (200, {'Content-Type': 'text/html'},
+              '<link rel="alternate" type="application/rss+xml" href="/old.xml">'),
+        '/old.xml': (404, {'Content-Type': 'text/plain'}, 'gone'),
+        '/rss.xml': (200, {'Content-Type': 'application/rss+xml'}, RSS_FEED),
+    })
+    result = process(http_server.base_url + '/', options=Options(fulltext=False))
+    assert result.feed.title == 'Example feed'

@@ -69,6 +69,8 @@ def build_parser():
     misc.add_argument('--timeout', type=float, default=20, help='HTTP timeout in seconds')
     misc.add_argument('--insecure', action='store_true', help='do not verify TLS certificates')
     misc.add_argument('--no-meta', action='store_true', help='do not follow meta refresh')
+    misc.add_argument('--allow-private', action='store_true',
+                      help='allow loopback/private destinations (local development only)')
     misc.add_argument('--version', action='version', version='pol-reader 1.0')
     return parser
 
@@ -98,6 +100,7 @@ def _options(args):
         timeout=args.timeout,
         verify_ssl=not args.insecure,
         follow_meta=not args.no_meta,
+        allow_private=True if args.allow_private else None,
         indent=args.indent,
         cache=args.cache or args.offline,
         cache_only=args.offline,

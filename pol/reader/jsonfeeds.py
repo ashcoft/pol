@@ -12,6 +12,7 @@ import fnmatch
 import json
 import re
 from dataclasses import dataclass, field
+from html import escape as html_escape
 from urllib.parse import urljoin
 
 from lxml import etree
@@ -133,7 +134,8 @@ def _path_parts(path):
         if not part:
             continue
         if part.endswith(('[]', '[*]')):
-            parts.extend((part[:-2], '[]'))
+            suffix = 3 if part.endswith('[*]') else 2
+            parts.extend((part[:-suffix], '[]'))
         else:
             parts.append(part)
     return parts
@@ -221,7 +223,7 @@ def _xpath_inner(node, expression):
         if isinstance(match, str):
             parts.append(match)
         else:
-            parts.append((match.text or '') + ''.join(
+            parts.append((html_escape(match.text) if match.text else '') + ''.join(
                 etree.tostring(child, encoding='unicode', method='html')
                 for child in match))
     return ''.join(parts).strip()
@@ -266,6 +268,7 @@ def _parse_markup(text, url, rules, mode):
         except (ValueError, TypeError) as exc:
             raise ParseError('Invalid HTML document') from exc
     else:
+        text = charset.strip_declaration(text)
         parser = etree.XMLParser(recover=True, resolve_entities=False,
                                  no_network=True, huge_tree=True)
         try:

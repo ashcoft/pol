@@ -287,3 +287,72 @@ def test_sanitize_keeps_text_after_a_dropped_element():
     cleaned = sanitize_html('<p>before<script>x()</script>after</p>')
     assert '<script' not in cleaned
     assert 'before' in cleaned and 'after' in cleaned
+def test_parse_iso_8859_1_declared_feed_keeps_text():
+    raw = ('<?xml version="1.0" encoding="iso-8859-1"?>'
+           '<rss><channel><title>café</title>'
+           '<item><title>café</title><link>https://example.com/a</link></item>'
+           '</channel></rss>').encode('iso-8859-1')
+    feed = parse_feed(raw, 'https://example.com/feed')
+    assert feed.title == 'café'
+    assert feed.items[0].title == 'café'
+
+
+def test_parse_utf16_feed_keeps_text():
+    raw = ('<?xml version="1.0" encoding="utf-16"?>'
+           '<rss><channel><title>café</title>'
+           '<item><title>café</title><link>https://example.com/a</link></item>'
+           '</channel></rss>').encode('utf-16')
+    feed = parse_feed(raw, 'https://example.com/feed')
+    assert feed.title == 'café'
+    assert feed.items[0].title == 'café'
+
+
+def test_rss_prefers_dc_creator_over_email_author():
+    raw = """<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel><title>T</title><item><title>I</title><link>https://example.com/i</link>
+    <author>alice@example.com</author><dc:creator>Alice</dc:creator></item></channel></rss>"""
+    feed = parse_feed(raw, 'https://example.com/feed')
+    assert feed.items[0].author == 'Alice'
+
+
+def test_guid_is_permalink_false_is_not_used_as_link():
+    raw = """<rss version="2.0"><channel><title>T</title><item><title>I</title>
+    <guid isPermaLink="false">urn:post:1</guid></item></channel></rss>"""
+    feed = parse_feed(raw, 'https://example.com/feed')
+    assert feed.items[0].link == ''
+    assert feed.items[0].id == 'urn:post:1'
+
+
+def test_json_feed_content_text_is_escaped():
+    raw = """{"version":"https://jsonfeed.org/version/1.1","title":"T","items":[
+    {"id":"1","content_text":"<b>plain</b>","summary":"<i>sum</i>"}]}"""
+    feed = parse_feed(raw.encode(), 'https://example.com/feed.json')
+    assert feed.items[0].content == '&lt;b&gt;plain&lt;/b&gt;'
+    assert feed.items[0].summary == '&lt;i&gt;sum&lt;/i&gt;'
+
+
+def test_json_feed_image_is_preserved():
+    raw = """{"version":"https://jsonfeed.org/version/1.1","title":"T","items":[
+    {"id":"1","image":"https://example.com/i.jpg","content_html":"<p>x</p>"}]}"""
+    feed = parse_feed(raw.encode(), 'https://example.com/feed.json')
+    assert feed.items[0].images[0] == 'https://example.com/i.jpg'
+
+
+def test_json_feed_rejects_non_list_items():
+    with pytest.raises(ParseError):
+        parse_feed(b'{"version":"https://jsonfeed.org/version/1.1","items":42}',
+                   'https://example.com/feed.json')
+
+
+def test_sanitize_html_escapes_text_nodes():
+    result = sanitize_html('&lt;img src=x onerror=alert(1)&gt;<b>ok</b>')
+    assert '<img' not in result
+    assert '&lt;img' in result
+    assert '<b>ok</b>' in result
+
+
+def test_sanitize_html_preserves_text_after_removed_embed():
+    result = sanitize_html('<p>before</p><iframe src="x"></iframe>after')
+    assert 'before' in result
+    assert 'after' in result
+    assert '<iframe' not in result

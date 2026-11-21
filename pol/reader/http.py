@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import ssl
 import zlib
@@ -20,8 +22,6 @@ from .urls import clean_url, normalize_url
 DEFAULT_USER_AGENT = 'pol-reader/1.0 (+https://github.com/ashcoft/pol)'
 DEFAULT_TIMEOUT = 20
 DEFAULT_MAX_SIZE = 8 * 1024 * 1024
-# Off for the library default so local fixtures keep working; the HTTP surface turns it on.
-DEFAULT_BLOCK_PRIVATE_HOSTS = False
 MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
 
 FEED_CONTENT_TYPES = (
@@ -78,11 +78,21 @@ class Response:
                 or head.startswith(b'{"version"'))
 
 
+def ensure_public_url(url, allow_private=False):
+    """Reject destinations that resolve to non-public addresses."""
+    if allow_private:
+        return
+    assert_public_url(url)
+
+
 class GuardedRedirectHandler(urllib_request.HTTPRedirectHandler):
     """Rejects a redirect hop that points at a private or local destination."""
 
+    def __init__(self, allow_private=False):
+        self.allow_private = allow_private
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        assert_public_url(urljoin(req.full_url, newurl))
+        ensure_public_url(urljoin(req.full_url, newurl), self.allow_private)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -90,10 +100,14 @@ class UrllibTransport:
     """Default transport. Returns (status, headers, body, final_url)."""
 
     def __init__(self, timeout=DEFAULT_TIMEOUT, max_size=DEFAULT_MAX_SIZE,
-                 verify_ssl=True, block_private_hosts=False):
+                 verify_ssl=True, allow_private=None, block_private_hosts=False):
         self.timeout = timeout
         self.max_size = max_size
-        handlers = [GuardedRedirectHandler()] if block_private_hosts else []
+        if block_private_hosts:
+            allow_private = False
+        if allow_private is None:
+            allow_private = False
+        handlers = [GuardedRedirectHandler(allow_private)]
         if not verify_ssl:
             context = ssl.create_default_context()
             context.check_hostname = False
@@ -116,10 +130,8 @@ class UrllibTransport:
         except OSError as exc:
             raise FetchError('Could not read %s: %s' % (url, exc), url=url) from exc
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 response.close()
-            except Exception:
-                pass
 
         if len(body) > limit:
             raise FetchError('Response is larger than %s bytes' % limit, url=url)
@@ -133,25 +145,27 @@ class Fetcher:
     def __init__(self, user_agent=DEFAULT_USER_AGENT, timeout=DEFAULT_TIMEOUT,
                  max_size=DEFAULT_MAX_SIZE, cache: HttpCache | None = None,
                  transport=None, verify_ssl=True, allow_meta_refresh=True,
-                 cache_only=False, block_private_hosts=None):
+                 cache_only=False, allow_private=None, block_private_hosts=None):
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.timeout = timeout
         self.max_size = max_size
         self.cache = cache
-        self.block_private_hosts = (DEFAULT_BLOCK_PRIVATE_HOSTS
-                                    if block_private_hosts is None
-                                    else block_private_hosts)
+        if block_private_hosts is not None:
+            allow_private = not block_private_hosts
+        if allow_private is None:
+            allow_private = os.environ.get('POL_READER_ALLOW_PRIVATE', '').strip().lower() in (
+                '1', 'true', 'yes', 'on')
+        self.allow_private = allow_private
+        self.block_private_hosts = not allow_private
         self.transport = transport or UrllibTransport(
             timeout=timeout, max_size=max_size, verify_ssl=verify_ssl,
-            block_private_hosts=self.block_private_hosts)
+            allow_private=allow_private)
         self.allow_meta_refresh = allow_meta_refresh
         self.cache_only = cache_only
 
     def fetch(self, url, headers=None, data=None, method='GET', force=False,
               allow_meta=True, _depth=0):
         url = clean_url(normalize_url(url))
-        if self.block_private_hosts:
-            assert_public_url(url)
         request_headers = {
             'User-Agent': self.user_agent,
             'Accept': ('application/rss+xml, application/atom+xml, '
@@ -165,45 +179,57 @@ class Fetcher:
         if self.cache_only:
             if not cached:
                 raise FetchError('URL is not in the cache', url=url)
-            return Response(url=cached.get('url', url), status=200,
-                            headers=cached.get('headers', {}),
-                            body=cached.get('body', b''))
+            response = Response(url=cached.get('url', url), status=200,
+                                headers=cached.get('headers', {}),
+                                body=cached.get('body', b''))
+            followed = self._follow_meta(response, headers, force, allow_meta, _depth)
+            return followed or response
+
+        ensure_public_url(url, self.allow_private)
         if cached and not force:
             request_headers.update(self.cache.conditional_headers(url))
 
         status, response_headers, body, final_url = self.transport.request(
             url, request_headers, data=data, method=method)
         final_url = clean_url(final_url)
-        if self.block_private_hosts:
-            # A redirect can land somewhere the requested URL would not have been allowed.
-            assert_public_url(final_url)
+        # A redirect can land somewhere the requested URL would not have been allowed.
+        ensure_public_url(final_url, self.allow_private)
 
         if status == 304 and cached:
             self.cache.renew(url)
-            return Response(url=cached.get('url', url), status=200,
-                            headers=cached.get('headers', {}),
-                            body=cached.get('body', b''))
+            response = Response(url=cached.get('url', url), status=200,
+                                headers=cached.get('headers', {}),
+                                body=cached.get('body', b''))
+            followed = self._follow_meta(response, headers, force, allow_meta, _depth)
+            return followed or response
 
         body = self._decompress(body, response_headers)
         response = Response(url=final_url, status=status,
                             headers=response_headers, body=body)
 
-        if (allow_meta and self.allow_meta_refresh and _depth < 3
-                and response.ok and response.is_html):
-            target = meta_refresh_target(response.text, final_url)
-            if target and target != final_url:
-                return self.fetch(target, headers=headers, force=force,
-                                  allow_meta=allow_meta, _depth=_depth + 1)
-
+        # Store the source response as well, so meta-refresh pages work offline.
         if self.cache and status == 200:
             self.cache.store(url, status, response_headers, body, final_url=final_url)
-        return response
+
+        followed = self._follow_meta(response, headers, force, allow_meta, _depth)
+        return followed or response
+
+    def _follow_meta(self, response, headers, force, allow_meta, depth):
+        if not (allow_meta and self.allow_meta_refresh and depth < 3
+                and response.ok and response.is_html):
+            return None
+        target = meta_refresh_target(response.text, response.url)
+        if not target or target == response.url:
+            return None
+        return self.fetch(target, headers=headers, force=force,
+                          allow_meta=allow_meta, _depth=depth + 1)
 
     def resolve(self, url):
         """Follow redirects and return the final URL without keeping the body."""
         url = clean_url(normalize_url(url))
-        if self.block_private_hosts:
-            assert_public_url(url)
+        if self.cache_only:
+            return url
+        ensure_public_url(url, self.allow_private)
         headers = {'User-Agent': self.user_agent, 'Accept': '*/*'}
         for method in ('HEAD', 'GET'):
             try:
@@ -225,9 +251,15 @@ class Fetcher:
         for coding in reversed(codings):
             try:
                 body = _decode_body(body, coding)
-            except Exception:
-                # Some servers advertise gzip/br without actually applying it.
-                return body
+            except ValueError as exc:
+                raise FetchError('Could not decompress response: %s' % exc) from exc
+            except ImportError as exc:
+                raise FetchError('Brotli support is not installed') from exc
+            except Exception as exc:
+                if isinstance(exc, zlib.error) or exc.__class__.__module__.startswith('brotli'):
+                    # Some servers advertise gzip/br without actually applying it.
+                    return body
+                raise FetchError('Could not decompress response: %s' % exc) from exc
         return body
 
 
@@ -242,10 +274,15 @@ def _decode_body(body, coding):
     if coding == 'br':
         import brotli
 
-        out = brotli.decompress(body)
-        if len(out) > MAX_DECOMPRESSED_SIZE:
-            raise ValueError('Decompressed response is too large')
-        return out
+        decompressor = brotli.Decompressor()
+        out = bytearray()
+        for index in range(0, len(body), 4096):
+            out.extend(decompressor.process(body[index:index + 4096]))
+            if len(out) > MAX_DECOMPRESSED_SIZE:
+                raise ValueError('Decompressed response is too large')
+        if not decompressor.is_finished():
+            raise ValueError('Incomplete brotli stream')
+        return bytes(out)
     return body
 
 

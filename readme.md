@@ -95,10 +95,11 @@ Installing the project (`pip install .`) also provides the `morss` and
 ## Cache backends
 
 Set `POL_CACHE_BACKEND` (or `CACHE_BACKEND` in `settings.py`) to `memory`
-(default), `diskcache`, `redis` or `none`. `POL_CACHE_DIR` selects the disk
-directory and `POL_REDIS_URL` the redis server. The reader uses conditional
-requests (`If-None-Match` / `If-Modified-Since`) and falls back to the memory
-backend when an optional backend is unavailable.
+(default), `diskcache`, `redis` or `none`. The `diskcache` backend is a built-in
+JSON-backed disk cache; `POL_CACHE_DIR` selects its directory. `POL_REDIS_URL`
+selects the redis server. The reader uses conditional requests
+(`If-None-Match` / `If-Modified-Since`) and falls back to the memory backend
+when Redis is unavailable.
 
 ## Requirements
 

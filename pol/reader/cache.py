@@ -1,15 +1,16 @@
 """Cache backends and the HTTP response cache built on top of them.
 
-Backends: in-process memory (always available), redis and diskcache. Redis and
-diskcache are optional dependencies; when they are missing or unusable the
-factory falls back to the memory backend instead of breaking the caller.
+Backends: in-process memory (always available), redis and a JSON-backed disk
+cache. Redis is optional; when it is missing or unusable the factory falls back
+to the memory backend instead of breaking the caller.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import os
-import pickle
 import tempfile
 import threading
 import time
@@ -86,8 +87,29 @@ class MemoryCache(BaseCache):
             self._data.clear()
 
 
+def _encode_value(value):
+    """Encode cache values as JSON without pickle."""
+    if isinstance(value, bytes):
+        return {'__bytes__': base64.b64encode(value).decode('ascii')}
+    if isinstance(value, dict):
+        return {str(key): _encode_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_encode_value(item) for item in value]
+    return value
+
+
+def _decode_value(value):
+    if isinstance(value, dict):
+        if set(value) == {'__bytes__'}:
+            return base64.b64decode(value['__bytes__'])
+        return {key: _decode_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_decode_value(item) for item in value]
+    return value
+
+
 class _FileCache(BaseCache):
-    """Minimal pickle-on-disk backend used when diskcache is unavailable."""
+    """Disk-backed cache using JSON-safe serialization."""
 
     def __init__(self, directory, max_entries=10000):
         self.directory = os.path.abspath(directory)
@@ -102,25 +124,28 @@ class _FileCache(BaseCache):
     def get(self, key, default=None):
         path = self._path(key)
         try:
-            with open(path, 'rb') as handle:
-                payload = pickle.load(handle)
-        except (OSError, pickle.PickleError, EOFError, AttributeError,
-                ImportError, ValueError, TypeError):
+            with open(path, encoding='utf-8') as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError, TypeError):
             return default
         expires = payload.get('expires')
         if expires is not None and expires <= time.time():
             self.delete(key)
             return default
-        return payload.get('value', default)
+        try:
+            return _decode_value(payload.get('value'))
+        except (ValueError, TypeError):
+            return default
 
     def set(self, key, value, ttl=None):
-        payload = {'expires': time.time() + ttl if ttl else None, 'value': value}
+        payload = {'expires': time.time() + ttl if ttl else None,
+                   'value': _encode_value(value)}
         path = self._path(key)
         with self._lock:
             fd, tmp = tempfile.mkstemp(dir=self.directory, suffix='.tmp')
             try:
-                with os.fdopen(fd, 'wb') as handle:
-                    pickle.dump(payload, handle, pickle.HIGHEST_PROTOCOL)
+                with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+                    json.dump(payload, handle, ensure_ascii=False)
                 os.replace(tmp, path)
             finally:
                 if os.path.exists(tmp):
@@ -161,43 +186,67 @@ class _FileCache(BaseCache):
             pass
 
 
-class DiskCache(BaseCache):
-    """diskcache backend, falling back to a small stdlib file cache."""
+class DiskCache(_FileCache):
+    """Disk-backed cache with TTL and a bounded number of entries."""
 
-    def __init__(self, directory, max_entries=10000):
-        try:
-            import diskcache
-        except ImportError:
-            self._backend = _FileCache(directory, max_entries=max_entries)
-            self._uses_expire_kwarg = False
-        else:
-            self._backend = diskcache.Cache(
-                directory, eviction_policy='least-frequently-used',
-                size_limit=256 * 1024 * 1024)
-            self._uses_expire_kwarg = True
+
+class FallbackCache(BaseCache):
+    """Use a primary backend until it fails, then switch to memory."""
+
+    def __init__(self, primary, fallback=None):
+        self.primary = primary
+        self.fallback = fallback or MemoryCache()
+        self._primary_ok = True
+
+    def _disable(self):
+        self._primary_ok = False
 
     def get(self, key, default=None):
-        return self._backend.get(key, default)
+        if self._primary_ok:
+            try:
+                return self.primary.get(key, default)
+            except Exception:
+                self._disable()
+        return self.fallback.get(key, default)
 
     def set(self, key, value, ttl=None):
-        if self._uses_expire_kwarg:
-            self._backend.set(key, value, expire=ttl)
-        else:
-            self._backend.set(key, value, ttl=ttl)
+        if self._primary_ok:
+            try:
+                self.primary.set(key, value, ttl=ttl)
+                return
+            except Exception:
+                self._disable()
+        self.fallback.set(key, value, ttl=ttl)
 
     def delete(self, key):
-        self._backend.delete(key)
+        if self._primary_ok:
+            try:
+                self.primary.delete(key)
+                return
+            except Exception:
+                self._disable()
+        self.fallback.delete(key)
 
     def clear(self):
-        self._backend.clear()
+        if self._primary_ok:
+            try:
+                self.primary.clear()
+                return
+            except Exception:
+                self._disable()
+        self.fallback.clear()
 
 
 class RedisCache(BaseCache):
-    def __init__(self, url='redis://127.0.0.1:6379/0', prefix='pol:'):
+    def __init__(self, url='redis://127.0.0.1:6379/0', prefix='pol:v2:'):
         import redis
 
-        self._client = redis.Redis.from_url(url)
+        self._client = redis.Redis.from_url(
+            url, socket_connect_timeout=1, socket_timeout=1)
         self._prefix = prefix
+
+    def ping(self):
+        self._client.ping()
 
     def _key(self, key):
         return self._prefix + str(key)
@@ -207,13 +256,13 @@ class RedisCache(BaseCache):
         if raw is None:
             return default
         try:
-            return pickle.loads(raw)
-        except (pickle.PickleError, EOFError):
+            return _decode_value(json.loads(raw.decode('utf-8')))
+        except (ValueError, UnicodeDecodeError, TypeError):
             return default
 
     def set(self, key, value, ttl=None):
-        self._client.set(self._key(key), pickle.dumps(value, pickle.HIGHEST_PROTOCOL),
-                         ex=int(ttl) if ttl else None)
+        payload = json.dumps(_encode_value(value), ensure_ascii=False).encode('utf-8')
+        self._client.set(self._key(key), payload, ex=int(ttl) if ttl else None)
 
     def delete(self, key):
         self._client.delete(self._key(key))
@@ -244,10 +293,13 @@ def make_cache(backend=None, **kwargs):
             return MemoryCache(kwargs.get('max_entries', 512))
     if backend == 'redis':
         url = kwargs.get('url') or os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
+        fallback = MemoryCache(kwargs.get('max_entries', 512))
         try:
-            return RedisCache(url)
+            cache = RedisCache(url)
+            cache.ping()
+            return FallbackCache(cache, fallback)
         except Exception:
-            return MemoryCache(kwargs.get('max_entries', 512))
+            return fallback
     return MemoryCache(kwargs.get('max_entries', 512))
 
 

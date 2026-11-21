@@ -1,7 +1,8 @@
 """Reject fetches aimed at private or reserved network destinations.
 
-Mirrors the guard added to ashcoft/rss-finder, plus a resolver check: Python can see the
-addresses a hostname resolves to, so a name pointing at a private address is refused too.
+Mirrors the guard added to ashcoft/rss-finder, plus a resolver check: Python can
+see the addresses a hostname resolves to, so a name pointing at a private
+address is refused too. The HTTP layer re-checks every redirect hop.
 """
 
 from __future__ import annotations
@@ -52,12 +53,17 @@ def assert_public_url(url: str, resolver=resolve_addresses) -> str:
     connect (DNS rebinding) is not covered.
     """
     parts = urlsplit(url)
-    if parts.scheme.lower() not in ('http', 'https'):
+    scheme = parts.scheme.lower()
+    if scheme not in ('http', 'https'):
         raise InvalidURLError('URL must use http or https')
 
     host = parts.hostname or ''
     if is_blocked_host(host):
         raise InvalidURLError('URL host is not allowed')
+    try:
+        parts.port  # noqa: B018 - validates the port
+    except ValueError as exc:
+        raise InvalidURLError('Invalid URL port') from exc
 
     if resolver is None:
         return url

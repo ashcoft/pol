@@ -32,12 +32,9 @@ def _normalize_discovery_url(url):
     scheme = _SCHEME_RE.match(trimmed)
     candidate = trimmed if scheme else 'https://' + trimmed
     try:
-        parts = urllib.parse.urlsplit(candidate)
-        parts.port  # noqa: B018 - validates the port
-    except ValueError as exc:
+        URLValidator(schemes=['http', 'https'])(candidate)
+    except ValidationError as exc:
         raise ValueError('Invalid URL format') from exc
-    if parts.scheme.lower() not in ('http', 'https') or not parts.hostname:
-        raise ValueError('Invalid URL format')
     return candidate
 
 def index(request):
@@ -319,9 +316,12 @@ def discover(request):
     except ValueError:
         return HttpResponseBadRequest('Invalid url')
 
+    if not url.startswith(('http://', 'https://')):
+        return HttpResponseBadRequest('Invalid url')
+
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:
-        with urllib.request.urlopen(target, timeout=30) as response:
+        with urllib.request.urlopen(target, timeout=10) as response:
             payload = response.read()
             status = response.status
     except urllib.error.HTTPError as exc:

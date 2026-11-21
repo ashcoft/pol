@@ -164,3 +164,19 @@ def test_options_preflight(reader_server):
     with urllib.request.urlopen(request, timeout=10) as response:
         assert response.status == 204
         assert response.headers['Access-Control-Allow-Origin'] == '*'
+
+
+def test_feed_preview_uses_content_when_summary_is_missing(reader_server, http_server):
+    feed = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+    <channel><title>Content only</title><link>https://example.com/</link>
+    <description>d</description><item><title>Only</title><link>https://example.com/only</link>
+    <content:encoded><![CDATA[<p>Only content</p>]]></content:encoded>
+    </item></channel></rss>"""
+    http_server.routes['/content-only.xml'] = (
+        200, {'Content-Type': 'application/rss+xml'}, feed)
+
+    response = _get(reader_server + '/api/feed-preview',
+                    url=http_server.base_url + '/content-only.xml')
+    payload = json.loads(response.read().decode('utf-8'))
+    assert 'Only content' in payload['items'][0]['summary']

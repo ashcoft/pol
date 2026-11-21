@@ -50,6 +50,16 @@ def test_unwrap_redirector_leaves_plain_urls_alone():
     assert unwrap_redirector(url) == url
 
 
+def test_unwrap_redirector_does_not_rewrite_search_queries():
+    url = 'https://www.google.com/search?q=cats'
+    assert unwrap_redirector(url) == url
+
+
+def test_strip_tracking_preserves_original_encoding():
+    url = 'https://example.com/feed?topic=machine%20learning&utm_source=x&sig=a%2Fb'
+    assert strip_tracking(url) == 'https://example.com/feed?topic=machine%20learning&sig=a%2Fb'
+
+
 def test_clean_url_unwraps_and_removes_fragment():
     url = 'https://l.facebook.com/l.php?u=https%3A%2F%2Fexample.com%2Fa%3Futm_source%3Dx#part'
     assert clean_url(url) == 'https://example.com/a'

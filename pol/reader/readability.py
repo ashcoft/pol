@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from html import escape as html_escape
 
 from lxml import etree
 from lxml import html as lxml_html
 
-from .parse import absolutize
+from .parse import absolutize, drop_element
 
 _BLOCK_TAGS = frozenset({'p', 'pre', 'td', 'blockquote', 'div', 'section', 'article'})
 _DROP_TAGS = frozenset({
@@ -30,7 +31,7 @@ _HIDDEN_RE = re.compile(r'display\s*:\s*none|visibility\s*:\s*hidden', re.IGNORE
 
 
 def _inner_html(element):
-    return (element.text or '') + ''.join(
+    return (html_escape(element.text) if element.text else '') + ''.join(
         etree.tostring(child, encoding='unicode', method='html') for child in element)
 
 
@@ -57,9 +58,7 @@ def _strip_junk(document):
             continue
         tag = element.tag.lower()
         if tag in _DROP_TAGS or _is_hidden(element) or _class_weight(element) <= -25:
-            parent = element.getparent()
-            if parent is not None:
-                parent.remove(element)
+            drop_element(element)
             continue
         for attr in list(element.attrib):
             if attr.lower().startswith('on'):

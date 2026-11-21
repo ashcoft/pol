@@ -6,8 +6,8 @@ import json
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from html import escape as html_escape
 from urllib.parse import urljoin
-from xml.sax.saxutils import escape as escape_markup
 
 from lxml import etree
 from lxml import html as lxml_html
@@ -205,7 +205,7 @@ def sanitize_html(fragment):
     for element in list(root.iter()):
         tag = element.tag.lower() if isinstance(element.tag, str) else ''
         if tag in _DROP_TAGS:
-            _drop(element)
+            drop_element(element)
             continue
         for attr in list(element.attrib):
             lowered = attr.lower()
@@ -218,28 +218,26 @@ def sanitize_html(fragment):
     return _inner_html(root)
 
 
-def _drop(element):
+def drop_element(element):
+    """Remove an element but keep the text that follows it."""
     parent = element.getparent()
-    if parent is not None:
-        # Keep the text that followed the dropped element.
-        tail = element.tail or ''
+    if parent is None:
+        return
+    tail = element.tail
+    if tail:
         previous = element.getprevious()
         if previous is not None:
             previous.tail = (previous.tail or '') + tail
         else:
             parent.text = (parent.text or '') + tail
-        parent.remove(element)
+    parent.remove(element)
 
 
 def _inner_html(element):
     # Text nodes are escaped here: a feed that writes `&lt;script&gt;` must come back as
     # text, not as markup the browser will execute.
-    parts = [escape_markup(element.text or '')]
-    for child in element:
-        parts.append(etree.tostring(child, encoding='unicode', method='html'))
-        if child.tail:
-            parts.append(escape_markup(child.tail))
-    return ''.join(parts)
+    return (html_escape(element.text) if element.text else '') + ''.join(
+        etree.tostring(child, encoding='unicode', method='html') for child in element)
 
 
 def html_to_text(fragment):
@@ -300,8 +298,11 @@ def _images(item, description, content):
 
 def _item_from_rss(element):
     link = _text(element, 'link')
-    guid = _text(element, 'guid')
-    if not link and guid and (_attr(_first(element, 'guid'), 'ispermalink').lower() != 'false'):
+    guid_element = _first(element, 'guid')
+    guid = _value(guid_element)
+    permalink = (_attr(guid_element, 'isPermaLink')
+                 or _attr(guid_element, 'ispermalink'))
+    if not link and guid and permalink.lower() != 'false':
         link = guid
     description = _text(element, 'description')
     content = _text(element, 'encoded', 'content')
@@ -313,7 +314,7 @@ def _item_from_rss(element):
         summary=description,
         content=content,
         date=date,
-        author=_text(element, 'author', 'creator'),
+        author=_text(element, 'creator', 'author'),
         enclosures=_enclosures(element),
     )
     _images(item, description, content)
@@ -389,6 +390,9 @@ def parse_json_feed(text, url=''):
         raise ParseError('Invalid JSON feed') from exc
     if not isinstance(data, dict) or 'items' not in data:
         raise ParseError('Not a JSON feed')
+    entries = data.get('items')
+    if not isinstance(entries, list):
+        raise ParseError('JSON feed items must be a list')
 
     feed = Feed(
         title=str(data.get('title') or ''),
@@ -398,25 +402,32 @@ def parse_json_feed(text, url=''):
         url=str(data.get('feed_url') or url),
         format='json',
     )
-    for entry in data.get('items') or []:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
-        content = str(entry.get('content_html') or entry.get('content_text') or '')
-        summary = str(entry.get('summary') or '')
-        authors = entry.get('authors') or []
+        if entry.get('content_html') is not None:
+            content = str(entry['content_html'])
+        else:
+            content = html_escape(str(entry.get('content_text') or ''))
+        summary = html_escape(str(entry.get('summary') or ''))
+
+        authors = entry.get('authors')
         author = ''
-        if authors and isinstance(authors[0], dict):
+        if isinstance(authors, list) and authors and isinstance(authors[0], dict):
             author = str(authors[0].get('name') or '')
-        elif entry.get('author'):
-            author = str((entry.get('author') or {}).get('name') or '')
+        elif isinstance(entry.get('author'), dict):
+            author = str(entry['author'].get('name') or '')
+
         enclosures = []
-        for attachment in entry.get('attachments') or []:
-            if isinstance(attachment, dict) and attachment.get('url'):
-                enclosures.append({
-                    'url': str(attachment['url']),
-                    'type': str(attachment.get('mime_type') or 'application/octet-stream'),
-                    'length': str(attachment.get('size_in_bytes') or ''),
-                })
+        attachments = entry.get('attachments')
+        if isinstance(attachments, list):
+            for attachment in attachments:
+                if isinstance(attachment, dict) and attachment.get('url'):
+                    enclosures.append({
+                        'url': str(attachment['url']),
+                        'type': str(attachment.get('mime_type') or 'application/octet-stream'),
+                        'length': str(attachment.get('size_in_bytes') or ''),
+                    })
         item = Item(
             title=str(entry.get('title') or ''),
             link=str(entry.get('url') or entry.get('external_url') or ''),
@@ -427,9 +438,11 @@ def parse_json_feed(text, url=''):
             author=author,
             enclosures=enclosures,
         )
-        if entry.get('image'):
-            item.images.append(str(entry['image']))
         _images(item, summary, content)
+        if entry.get('image'):
+            image = str(entry['image'])
+            if image not in item.images:
+                item.images.insert(0, image)
         feed.items.append(item)
     return feed
 
@@ -452,7 +465,10 @@ def _absolutize_feed(feed, base_url):
 def parse_feed(data, url='', content_type=''):
     """Parse a feed from bytes or text. Raises ParseError for non-feed input."""
     if isinstance(data, bytes):
-        text, _encoding = charset.decode(data, content_type)
+        if content_type and 'json' in content_type.lower():
+            text, _encoding = charset.decode(data, content_type)
+        else:
+            text = charset.decode_xml(data, content_type)
     else:
         text = charset.strip_declaration(str(data))
 
