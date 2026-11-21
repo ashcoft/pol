@@ -43,7 +43,8 @@ RUN apt-get update \
         libmariadb3 \
         libxml2 \
         libxslt1.1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 1000 appuser
 
 COPY --from=builder /opt/venv /opt/venv
 
@@ -55,7 +56,11 @@ COPY . .
 RUN cp ./frontend/frontend/settings.py.example ./frontend/frontend/settings.py \
     && cp ./nginx/default.site-example /etc/nginx/sites-available/default \
     && chmod +x ./frontend/start.sh \
-    && mkdir -p /tmp
+    && mkdir -p /tmp /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi \
+                /var/lib/nginx/uwsgi /var/lib/nginx/scgi \
+    && chown -R appuser:appuser /app /etc/nginx /var/lib/nginx /var/log/nginx /tmp
+
+USER appuser
 
 EXPOSE 8088
 

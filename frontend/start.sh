@@ -4,6 +4,13 @@ set -euo pipefail
 WEB_PORT="${WEB_PORT:-8088}"
 
 # nginx listens on WEB_PORT and proxies to Django and the downloader.
+# The container runs as a non-root user, so keep the pid file in /tmp.
+if grep -q '^pid ' /etc/nginx/nginx.conf; then
+    sed -i -E 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf
+else
+    sed -i '1i pid /tmp/nginx.pid;' /etc/nginx/nginx.conf
+fi
+
 NGINX_SITE=/etc/nginx/sites-available/default
 if [ -f "$NGINX_SITE" ]; then
     sed -i -E \
