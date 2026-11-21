@@ -5,12 +5,23 @@ import os
 
 import django
 from lxml import html as lxml_html
+from scrapy.selector import Selector
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 django.setup()
 
-from frontend.frontend.views import _get_image_xpath, _get_link_xpath  # noqa: E402
-from pol.feed import _image_mime, _normalize_images, _parse_date  # noqa: E402
+from frontend.frontend.views import (  # noqa: E402
+    _get_image_xpath,
+    _get_link_xpath,
+    _xpath_base,
+)
+from pol.feed import (  # noqa: E402
+    Feed,
+    _as_utc,
+    _image_mime,
+    _normalize_images,
+    _parse_date,
+)
 
 
 def test_parse_date_accepts_common_formats():
@@ -25,21 +36,45 @@ def test_parse_date_returns_none_for_unusable_values():
     assert _parse_date('not a date') is None
 
 
-def test_image_xpath_finds_real_source_of_lazy_image():
-    doc = lxml_html.fromstring(
-        '<html><body><article>'
-        '<img data-src="/real.png" src="data:image/png;base64,AAA">'
-        '</article></body></html>'
-    )
-    values = doc.xpath('//article')[0].xpath(_get_image_xpath('img[1]/child::node()'))
-    assert '/real.png' in values
-    # The placeholder is returned too; the feed builder skips data: values.
-    assert any(value.startswith('data:') for value in values)
+def test_as_utc_normalizes_naive_and_aware_values():
+    naive = datetime.datetime(2026, 11, 20, 12, 0)
+    assert _as_utc(naive).tzinfo is datetime.timezone.utc
+    aware = datetime.datetime(2026, 11, 20, 12, 0,
+                             tzinfo=datetime.timezone(datetime.timedelta(hours=3)))
+    assert _as_utc(aware) == datetime.datetime(2026, 11, 20, 9, 0, tzinfo=datetime.timezone.utc)
+    assert _as_utc(None) is None
 
 
-def test_image_xpath_handles_plain_image():
-    doc = lxml_html.fromstring('<html><body><article><img src="/plain.png"></article></body></html>')
-    assert doc.xpath('//article')[0].xpath(_get_image_xpath('img[1]/child::node()')) == ['/plain.png']
+def test_xpath_base_only_strips_generated_suffix():
+    assert _xpath_base('img[1]/child::node()') == 'img[1]'
+    assert _xpath_base('./child::node()') == '.'
+    assert _xpath_base('.//img/@src') == './/img/@src'
+
+
+def test_image_xpath_keeps_element_path():
+    assert _get_image_xpath('img[1]/child::node()') == 'img[1]'
+    assert _get_image_xpath('.//img/@src') == './/img/@src'
+
+
+def test_extract_image_prefers_lazy_attribute_over_src():
+    feed = Feed({})
+    node = Selector(text='<article><img data-src="/real.png" src="/blank.gif"></article>').xpath('//article')
+    assert feed._extract_image(node, 'img[1]') == '/real.png'
+
+
+def test_extract_image_skips_data_uri_case_insensitively():
+    feed = Feed({})
+    node = Selector(
+        text='<article><img src="DATA:image/png;base64,AAA" data-src="/real.png"></article>'
+    ).xpath('//article')
+    assert feed._extract_image(node, 'img[1]') == '/real.png'
+
+
+def test_extract_image_accepts_attribute_selector():
+    feed = Feed({})
+    node = Selector(text='<article><img src="/plain.png"></article>').xpath('//article')
+    assert feed._extract_image(node, 'img[1]/@src') == '/plain.png'
+    assert feed._extract_image(node, 'img[1]/child::node()') is None
 
 
 def test_link_xpath_handles_nested_and_wrapping_anchors():

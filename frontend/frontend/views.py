@@ -90,10 +90,15 @@ def setup_get_selected_ids(request):
         return HttpResponse(json.dumps(resp))
 
 
+_CHILD_NODE_SUFFIX = '/child::node()'
+
+
 def _xpath_base(xpath):
-    if xpath == './child::node()':
+    if xpath == '.' + _CHILD_NODE_SUFFIX:
         return '.'
-    return xpath[:len(xpath)-len('/child::node()')]
+    if xpath.endswith(_CHILD_NODE_SUFFIX):
+        return xpath[:-len(_CHILD_NODE_SUFFIX)]
+    return xpath
 
 
 def _get_link_xpath(title_xpath):
@@ -104,18 +109,10 @@ def _get_link_xpath(title_xpath):
 
 
 def _get_image_xpath(image_xpath):
-    base = _xpath_base(image_xpath)
-    # Lazy-loaded images keep the real URL in a data-* attribute.
-    attrs = ('src', 'data-src', 'data-original', 'data-lazy-src')
-    return '(' + ' | '.join(
-        '%s/descendant-or-self::node()/@%s' % (base, attr) for attr in attrs) + ')'
+    # Keep the element path; pol.feed prefers data-src over src when reading it,
+    # which avoids emitting lazy-loading placeholders.
+    return _xpath_base(image_xpath)
 
-
-_BASIC_TITLE_ID=1
-_BASIC_DESCRIPTION_ID=2
-_BASIC_LINK_ID=3
-_BASIC_DATE_ID=4
-_BASIC_IMAGE_ID=5
 
 def _create_feed(url, xpathes, edited=False):
     feed_xpath = xpathes[0]
@@ -124,18 +121,21 @@ def _create_feed(url, xpathes, edited=False):
     feed = Feed(uri=url, xpath=feed_xpath, edited=edited)
     feed.save()
 
-    fields = Field.objects.all()
+    fields = list(Field.objects.all())
+    by_id = {field.id: field for field in fields}
+    by_name = {by_id[field_id].name: value
+               for field_id, value in item_xpathes.items() if field_id in by_id}
 
     for field in fields:
-        if field.id == _BASIC_LINK_ID and _BASIC_TITLE_ID in item_xpathes and not edited:
-            ff = FeedField(feed=feed, field=field, xpath= _get_link_xpath(item_xpathes[_BASIC_TITLE_ID][0]))
-            ff.save()
-        elif field.id == _BASIC_IMAGE_ID and _BASIC_IMAGE_ID in item_xpathes and not edited:
-            ff = FeedField(feed=feed, field=field, xpath=_get_image_xpath(item_xpathes[_BASIC_IMAGE_ID][0]))
-            ff.save()
+        if field.name == 'link' and 'title' in by_name and not edited:
+            xpath = _get_link_xpath(by_name['title'][0])
+        elif field.name == 'image' and 'image' in by_name and not edited:
+            xpath = _get_image_xpath(by_name['image'][0])
         elif field.id in item_xpathes:
-            ff = FeedField(feed=feed, field=field, xpath=item_xpathes[field.id][0])
-            ff.save()
+            xpath = item_xpathes[field.id][0]
+        else:
+            continue
+        FeedField(feed=feed, field=field, xpath=xpath).save()
 
     return feed.id
 
@@ -154,15 +154,11 @@ def setup_create_feed(request):
         xpathes = build_xpathes_for_items(item_names, html_json)
 
         field_xpathes = {}
-        required = True
-        if 'title' in xpathes[1]:
-            field_xpathes[_BASIC_TITLE_ID] = [xpathes[1]['title'], required]
-        if 'description' in xpathes[1]:
-            field_xpathes[_BASIC_DESCRIPTION_ID] = [xpathes[1]['description'], required]
-        if 'date' in xpathes[1]:
-            field_xpathes[_BASIC_DATE_ID] = [xpathes[1]['date'], False]
-        if 'image' in xpathes[1]:
-            field_xpathes[_BASIC_IMAGE_ID] = [xpathes[1]['image'], False]
+        for field in Field.objects.all():
+            if field.name not in xpathes[1]:
+                continue
+            required = field.name in ('title', 'description')
+            field_xpathes[field.id] = [xpathes[1][field.name], required]
         xpathes[1] = field_xpathes
 
         feed_id = _create_feed(url, xpathes)
@@ -180,19 +176,36 @@ def _validate_selectors(selectors):
     if not isinstance(item_xpathes, dict):
         return False
 
-    item_xpathes = {int(field_id): xpath for field_id, xpath in item_xpathes.items()}
-
-    fields = Field.objects.all()
+    fields = list(Field.objects.all())
+    by_name = {field.name: field for field in fields}
+    by_id = {field.id: field for field in fields}
 
     item_xpathes_out = {}
 
-    for field in fields:
-        if field.id in item_xpathes:
-            if not isinstance(item_xpathes[field.id], str):
-                return False
-            else:
-                item_xpathes_out[field.id] = [item_xpathes[field.id], field.required]
+    for key, xpath in item_xpathes.items():
+        field = by_name.get(key)
+        if field is None:
+            try:
+                field = by_id.get(int(key))
+            except (TypeError, ValueError):
+                field = None
+        if field is None:
+            continue
+        if not isinstance(xpath, str):
+            return False
+        item_xpathes_out[field.id] = [xpath, field.required]
     return [feed_xpath, item_xpathes_out]
+
+
+def _name_field_results(messages, posts):
+    names = {field.id: field.name for field in Field.objects.all()}
+    feed_result, field_results = messages
+    field_results = {names.get(field_id, field_id): value
+                     for field_id, value in field_results.items()}
+    posts = [{names.get(field_id, field_id): value for field_id, value in post.items()}
+             for post in posts]
+    return [feed_result, field_results], posts
+
 
 def setup_validate_selectors(request):
     if request.method == 'POST':
@@ -203,7 +216,7 @@ def setup_validate_selectors(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
@@ -212,6 +225,7 @@ def setup_validate_selectors(request):
             return HttpResponseBadRequest('selectors are invalid')
 
         messages, posts, success = build_xpath_results(validated_selectors, file_name)
+        messages, posts = _name_field_results(messages, posts)
 
         return HttpResponse(json.dumps({'success': success, 'messages': messages, 'posts': posts}))
 
@@ -224,7 +238,7 @@ def setup_create_feed_ext(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
@@ -233,6 +247,7 @@ def setup_create_feed_ext(request):
             return HttpResponseBadRequest('selectors are invalid')
 
         messages, posts, success = build_xpath_results(validated_selectors, file_name)
+        messages, posts = _name_field_results(messages, posts)
 
         if success:
             url = obj['url']

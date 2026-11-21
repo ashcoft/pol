@@ -79,6 +79,14 @@ def _parse_date(value):
     return parsed
 
 
+def _as_utc(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=datetime.timezone.utc)
+    return value.astimezone(datetime.timezone.utc)
+
+
 def _image_mime(url):
     mime, _ = mimetypes.guess_type(url)
     return mime if mime and mime.startswith('image/') else 'image/jpeg'
@@ -147,6 +155,27 @@ class Feed(object):
                     cur_time -= datetime.timedelta(minutes=self.POST_TIME_DISTANCE)
         return new_post_cnt
 
+    IMAGE_ATTRIBUTES = ('data-src', 'data-original', 'data-lazy-src', 'src')
+
+    def _extract_image(self, node, xpath):
+        matches = node.xpath(xpath)
+        if not matches:
+            return None
+        # Prefer lazy-loading attributes: src is often a placeholder.
+        for attr in self.IMAGE_ATTRIBUTES:
+            value = matches.xpath('@' + attr).get()
+            if self._usable_image(value):
+                return value
+        for value in matches.extract():
+            if self._usable_image(value):
+                return value
+        return None
+
+    @staticmethod
+    def _usable_image(value):
+        value = (value or '').strip()
+        return bool(value) and '<' not in value and not value.lower().startswith('data:')
+
     def _build_link(self, html, doc_url, url):
         base_url = w3lib.html.get_base_url(html, doc_url)
         return six.moves.urllib.parse.urljoin(base_url, url)
@@ -163,23 +192,25 @@ class Feed(object):
             required_count = 0
             required_found = 0
             for field_name in ['title', 'description', 'link', 'date', 'image']:
-                if field_name in feed_config['fields']:
-                    if feed_config['required'][field_name]:
-                        required_count += 1
+                if field_name not in feed_config['fields']:
+                    continue
 
+                required = feed_config['required'][field_name]
+                if required:
+                    required_count += 1
+
+                if field_name == 'image':
+                    value = self._extract_image(node, feed_config['fields']['image'])
+                else:
                     extracted = node.xpath(feed_config['fields'][field_name]).extract()
-                    if field_name == 'image':
-                        # Lazy images expose placeholders next to the real URL.
-                        extracted = [v for v in extracted if v and not v.startswith('data:')]
-                    if extracted:
-                        if field_name == 'image':
-                            item['image'] = extracted[0]
-                        else:
-                            item[field_name] = u''.join(extracted)
-                        if feed_config['required'][field_name]:
-                            required_found += 1
-                        if field_name == 'link':
-                            item['link'] = self._build_link(page_unicode, feed_config['uri'], item[field_name])
+                    value = u''.join(extracted) if extracted else None
+                    if field_name == 'link' and value:
+                        value = self._build_link(page_unicode, feed_config['uri'], value)
+
+                if value:
+                    item[field_name] = value
+                    if required:
+                        required_found += 1
 
             if required_count == required_found:
                 items.append(item)
@@ -208,8 +239,8 @@ class Feed(object):
                 image = self._build_link(page_unicode, feed_config['uri'], image)
                 if image not in desc:
                     desc = '<img src="%s" alt="" />' % html.escape(image) + desc
-            time = (_parse_date(item.get('date')) or item.get('time')
-                    or datetime.datetime.utcnow())
+            time = (_parse_date(item.get('date')) or _as_utc(item.get('time'))
+                    or datetime.datetime.now(datetime.timezone.utc))
             if 'link' in item:
                 link = item['link']
             else:
