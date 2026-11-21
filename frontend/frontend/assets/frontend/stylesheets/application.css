@@ -545,3 +545,19 @@ body.feed-preview-open {
         flex: 1;
     }
 }
+
+.rss-related {
+    color: #6b7280;
+    font-size: .85rem;
+    margin: 1.5rem 0 0;
+}
+
+.rss-related a {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.rss-related a:hover {
+    text-decoration: underline;
+}
