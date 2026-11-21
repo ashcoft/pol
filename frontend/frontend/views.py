@@ -7,6 +7,7 @@ from django.http import HttpResponseRedirect, HttpResponse, HttpResponseBadReque
 from django.shortcuts import render
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.urls import reverse
 
 from .forms import IndexForm
@@ -81,6 +82,8 @@ def setup_get_selected_ids(request):
             xpathes[1]['link'] = _get_link_xpath(xpathes[1]['title'])
         if 'image' in xpathes[1]:
             xpathes[1]['image'] = _get_image_xpath(xpathes[1]['image'])
+        if 'date' in xpathes[1]:
+            xpathes[1]['date'] = _get_date_xpath(xpathes[1]['date'])
 
         resp = {
             'xpathes': xpathes,
@@ -114,28 +117,37 @@ def _get_image_xpath(image_xpath):
     return _xpath_base(image_xpath)
 
 
+def _get_date_xpath(date_xpath):
+    base = _xpath_base(date_xpath)
+    # Prefer a machine-readable <time datetime="..."> value over its label.
+    return '(%s/@datetime | %s/child::node())[1]' % (base, base)
+
+
 def _create_feed(url, xpathes, edited=False):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
-
-    feed = Feed(uri=url, xpath=feed_xpath, edited=edited)
-    feed.save()
 
     fields = list(Field.objects.all())
     by_id = {field.id: field for field in fields}
     by_name = {by_id[field_id].name: value
                for field_id, value in item_xpathes.items() if field_id in by_id}
 
-    for field in fields:
-        if field.name == 'link' and 'title' in by_name and not edited:
-            xpath = _get_link_xpath(by_name['title'][0])
-        elif field.name == 'image' and 'image' in by_name and not edited:
-            xpath = _get_image_xpath(by_name['image'][0])
-        elif field.id in item_xpathes:
-            xpath = item_xpathes[field.id][0]
-        else:
-            continue
-        FeedField(feed=feed, field=field, xpath=xpath).save()
+    with transaction.atomic():
+        feed = Feed(uri=url, xpath=feed_xpath, edited=edited)
+        feed.save()
+
+        for field in fields:
+            if field.name == 'link' and 'title' in by_name and not edited:
+                xpath = _get_link_xpath(by_name['title'][0])
+            elif field.name == 'image' and 'image' in by_name and not edited:
+                xpath = _get_image_xpath(by_name['image'][0])
+            elif field.name == 'date' and 'date' in by_name and not edited:
+                xpath = _get_date_xpath(by_name['date'][0])
+            elif field.id in item_xpathes:
+                xpath = item_xpathes[field.id][0]
+            else:
+                continue
+            FeedField(feed=feed, field=field, xpath=xpath).save()
 
     return feed.id
 

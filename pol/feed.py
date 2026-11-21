@@ -70,8 +70,13 @@ def _parse_date(value):
     """Parse a human-readable date from a page into an aware datetime."""
     if not value:
         return None
+    text = re.sub(r'<[^>]+>', ' ', value)
+    # dateutil fills missing parts from today; a time or day/month without a
+    # year would give the same article a new date on every refresh.
+    if not re.search(r'\d{4}', text):
+        return None
     try:
-        parsed = date_parser.parse(re.sub(r'<[^>]+>', ' ', value), fuzzy=True)
+        parsed = date_parser.parse(text, fuzzy=True)
     except (ValueError, OverflowError, TypeError):
         return None
     if parsed.tzinfo is None:
@@ -88,7 +93,8 @@ def _as_utc(value):
 
 
 def _image_mime(url):
-    mime, _ = mimetypes.guess_type(url)
+    path = six.moves.urllib.parse.urlsplit(url).path
+    mime, _ = mimetypes.guess_type(path)
     return mime if mime and mime.startswith('image/') else 'image/jpeg'
 
 
@@ -174,7 +180,10 @@ class Feed(object):
     @staticmethod
     def _usable_image(value):
         value = (value or '').strip()
-        return bool(value) and '<' not in value and not value.lower().startswith('data:')
+        if not value or '<' in value or value.lower().startswith('data:'):
+            return False
+        scheme = six.moves.urllib.parse.urlsplit(value).scheme.lower()
+        return scheme in ('', 'http', 'https')
 
     def _build_link(self, html, doc_url, url):
         base_url = w3lib.html.get_base_url(html, doc_url)
@@ -244,8 +253,11 @@ class Feed(object):
             if 'link' in item:
                 link = item['link']
             else:
-                # md5 is the published identity of link-less items; keep it stable.
-                fragment = md5((title + desc).encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
+                # md5 keeps published identities of link-less items stable.
+                identity = title + desc
+                if not identity:
+                    identity = (item.get('date') or '') + (item.get('image') or '')
+                fragment = md5(identity.encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
                 link = self.url_hash_regexp.sub('#' + fragment, feed_config['uri'])
             feed.add_item(
                 title = title,

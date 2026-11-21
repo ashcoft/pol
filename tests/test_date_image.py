@@ -34,11 +34,15 @@ def test_parse_date_returns_none_for_unusable_values():
     assert _parse_date('') is None
     assert _parse_date(None) is None
     assert _parse_date('not a date') is None
+    # No year: dateutil would fill it with the current one, giving an
+    # unchanged article a new date on every refresh.
+    assert _parse_date('12:30') is None
+    assert _parse_date('20 Nov') is None
 
 
 def test_as_utc_normalizes_naive_and_aware_values():
     naive = datetime.datetime(2026, 11, 20, 12, 0)
-    assert _as_utc(naive).tzinfo is datetime.timezone.utc
+    assert _as_utc(naive) == naive.replace(tzinfo=datetime.timezone.utc)
     aware = datetime.datetime(2026, 11, 20, 12, 0,
                              tzinfo=datetime.timezone(datetime.timedelta(hours=3)))
     assert _as_utc(aware) == datetime.datetime(2026, 11, 20, 9, 0, tzinfo=datetime.timezone.utc)
@@ -69,6 +73,11 @@ def test_extract_image_skips_data_uri_case_insensitively():
     ).xpath('//article')
     assert feed._extract_image(node, 'img[1]') == '/real.png'
 
+    only_placeholder = Selector(
+        text='<article><img src="DATA:image/png;base64,AAA"></article>'
+    ).xpath('//article')
+    assert feed._extract_image(only_placeholder, 'img[1]') is None
+
 
 def test_extract_image_accepts_attribute_selector():
     feed = Feed({})
@@ -95,4 +104,15 @@ def test_normalize_images_keeps_surrounding_text():
 
 def test_image_mime_guesses_from_extension():
     assert _image_mime('https://example.com/a.png') == 'image/png'
+    assert _image_mime('https://example.com/a.webp') == 'image/webp'
+    assert _image_mime('https://example.com/a.png?v=1') == 'image/png'
     assert _image_mime('https://example.com/a') == 'image/jpeg'
+
+
+def test_usable_image_rejects_non_http_schemes():
+    assert Feed._usable_image('https://example.com/a.png')
+    assert Feed._usable_image('/img/a.png')
+    assert Feed._usable_image('//cdn.example.com/a.png')
+    assert not Feed._usable_image('javascript:alert(1)')
+    assert not Feed._usable_image('file:///etc/passwd')
+    assert not Feed._usable_image('data:image/png;base64,AAA')
