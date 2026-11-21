@@ -95,7 +95,9 @@ def _enclosures(element):
         if name == 'link' and (_attr(child, 'rel') or '').lower() != 'enclosure':
             return
         entry = {'url': url, 'type': kind or 'application/octet-stream',
-                 'length': _attr(child, 'length'), 'medium': medium}
+                 'length': (_attr(child, 'length') or _attr(child, 'filesize')
+                            or _attr(child, 'fileSize')),
+                 'medium': medium}
         if name == 'thumbnail':
             # media:thumbnail already says the URL is artwork, even without a type.
             entry['thumbnail'] = True

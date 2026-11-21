@@ -356,3 +356,16 @@ def test_sanitize_html_preserves_text_after_removed_embed():
     assert 'before' in result
     assert 'after' in result
     assert '<iframe' not in result
+
+
+def test_media_content_file_size_becomes_the_enclosure_length():
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel><title>T</title><link>https://example.com/</link>
+    <item><title>A</title><link>https://example.com/a</link>
+      <media:content url="https://example.com/clip.mp4" type="video/mp4" fileSize="2048"/>
+    </item>
+  </channel>
+</rss>"""
+    item = parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml').items[0]
+    assert item.enclosures[0]['length'] == '2048'
