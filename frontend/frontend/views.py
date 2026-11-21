@@ -119,6 +119,9 @@ def _get_image_xpath(image_xpath):
 
 def _get_date_xpath(date_xpath):
     base = _xpath_base(date_xpath)
+    if base == '.':
+        # A bare '.' cannot take a predicate in XPath 1.0.
+        base = 'self::node()'
     # Prefer a non-empty machine-readable datetime; otherwise keep every child
     # node so a label split across elements is not truncated.
     return ('%s/@datetime[normalize-space(.)]'

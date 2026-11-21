@@ -77,6 +77,22 @@ def test_date_xpath_prefers_datetime_and_keeps_all_children():
         _get_date_xpath('time[1]/child::node()')).extract()) == '20 Nov 2026'
 
 
+def test_date_xpath_is_valid_when_date_is_the_item():
+    # A bare '.' cannot take a predicate in XPath 1.0.
+    xpath = _get_date_xpath('./child::node()')
+    assert '.[' not in xpath
+
+    node = Selector(
+        text='<html><body><time datetime="2026-11-19T10:00:00Z">Yesterday</time></body></html>'
+    ).xpath('//time')
+    assert node.xpath(xpath).extract() == ['2026-11-19T10:00:00Z']
+
+    label = Selector(
+        text='<html><body><time><span>20</span> Nov 2026</time></body></html>'
+    ).xpath('//time')
+    assert ''.join(label.xpath(xpath).extract()) == '<span>20</span> Nov 2026'
+
+
 def test_xpath_base_only_strips_generated_suffix():
     assert _xpath_base('img[1]/child::node()') == 'img[1]'
     assert _xpath_base('./child::node()') == '.'
