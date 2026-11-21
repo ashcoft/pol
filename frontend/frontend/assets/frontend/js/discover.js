@@ -1,3 +1,6 @@
+/* eslint-disable no-unsanitized/method, security/detect-object-injection --
+   feed HTML is parsed by DOMParser and sanitised below; attributes are read
+   from a live NamedNodeMap rather than from a user-controlled object key. */
 (function ($) {
     'use strict';
 

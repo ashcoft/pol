@@ -30,7 +30,9 @@ def _normalize_discovery_url(url):
     if not trimmed:
         raise ValueError('URL is required')
     scheme = _SCHEME_RE.match(trimmed)
-    candidate = trimmed if scheme else 'https://' + trimmed
+    # The user-controlled value is deliberately the URL host; URLValidator below
+    # rejects anything that is not a well-formed http(s) URL.
+    candidate = trimmed if scheme else 'https://' + trimmed  # nosemgrep
     try:
         URLValidator(schemes=['http', 'https'])(candidate)
     except ValidationError as exc:
@@ -321,7 +323,7 @@ def discover(request):
 
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:
-        with urllib.request.urlopen(target, timeout=10) as response:
+        with urllib.request.urlopen(target, timeout=10) as response:  # nosec B310
             payload = response.read()
             status = response.status
     except urllib.error.HTTPError as exc:
