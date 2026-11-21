@@ -178,7 +178,7 @@ DOWNLOADER_PAGE_URL = '/downloader?url='
 
 FEED_PAGE_URL = '/feed/'
 
-DOWNLOADER_USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.71 Safari/537.36'
+DOWNLOADER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 # limit of seconds in which user can access separate feed
 FEED_REQUEST_PERIOD_LIMIT = 0
 SNAPSHOT_DIR = '/tmp'
