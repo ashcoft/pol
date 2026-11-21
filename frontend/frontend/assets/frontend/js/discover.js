@@ -158,12 +158,13 @@
             currentFeedUrl = feed.url;
             lastTrigger = trigger || null;
             $panelTitle.text(feed.title || feed.url);
-            $('#feed-preview-favicon')
-                .off('error')
-                .on('error', function () {
+            var favicon = document.getElementById('feed-preview-favicon');
+            if (favicon) {
+                favicon.onerror = function () {
                     useFallbackIcon(this);
-                })
-                .attr('src', sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON);
+                };
+                favicon.src = sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON;
+            }
             $panelFull.attr('href', '/read?url=' + encodeURIComponent(feed.url) + '&format=html');
             $panelBody.empty().append(el('p').addClass('muted').text('Loading feed…'));
 
@@ -253,9 +254,9 @@
                     loading: 'lazy',
                     referrerpolicy: 'no-referrer'
                 });
-                $icon.on('error', function () {
+                $icon[0].onerror = function () {
                     useFallbackIcon(this);
-                });
+                };
                 $item.append($icon);
 
                 var $main = el('div').addClass('feed-result-main');
