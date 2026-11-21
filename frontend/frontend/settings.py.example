@@ -21,10 +21,11 @@ PROJECT_DIR = os.path.join(BASE_DIR, 'frontend')
 # See https://docs.djangoproject.com/en/1.8/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'e2e%g-cu_f9=#^5=(8et$@(y+wu+dflyi2h)nim#r0-m=kqd^@'
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY', 'e2e%g-cu_f9=#^5=(8et$@(y+wu+dflyi2h)nim#r0-m=kqd^@')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', '1').lower() not in ('0', 'false', 'no', 'off')
 
 # Hosts allowed to serve the app. Loopback only by default; set ALLOWED_HOSTS
 # to a comma-separated list of the names or IPs you actually use (for example
@@ -32,6 +33,11 @@ DEBUG = True
 ALLOWED_HOSTS = [host.strip() for host in
                  os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1]').split(',')
                  if host.strip()]
+
+# Origins trusted for unsafe requests (needed behind a TLS terminator).
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in
+                        os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+                        if origin.strip()]
 
 
 # Application definition
@@ -88,11 +94,11 @@ WSGI_APPLICATION = 'frontend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'pol',
-        'USER': 'root',
-        'PASSWORD': 'toor',
-        'HOST': '127.0.0.1',
-        'PORT': '3306'
+        'NAME': os.environ.get('DB_NAME', 'pol'),
+        'USER': os.environ.get('DB_USER', 'root'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'toor'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
     }
 }
 
@@ -107,7 +113,7 @@ LANGUAGES = (
     ('ru', 'Russian'),
 )
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.environ.get('TIME_ZONE', 'UTC')
 
 USE_I18N = True
 
@@ -138,6 +144,9 @@ STATICFILES_FINDERS = (
 )
 
 PIPELINE = {
+    # Sources are already compiled; render them individually so DEBUG=0
+    # works without a packing step.
+    'PIPELINE_ENABLED': False,
     'COMPILERS': [],
     'CSS_COMPRESSOR': None,
     'JS_COMPRESSOR': None,

@@ -16,7 +16,7 @@ nginx/                     nginx site template (proxies / to Django and /downloa
 tests/                     pytest test suite
 .github/workflows/        CI, release (semantic-release), Snyk security, Pullfrog
 requirements.txt           Python dependencies (root-level)
-Dockerfile, docker-compose.yaml, wait-for-it.sh, downloader.py
+Dockerfile, docker-compose.yaml, downloader.py
 ```
 
 ## Requirements
@@ -101,6 +101,16 @@ The template forwards the browser `Host` header so Django's CSRF checks pass beh
 
 ## Docker
 
+A prebuilt image is published to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/ashcoft/pol:latest
+```
+
+Tags are `latest` (default branch), `X.Y.Z` / `X.Y` for releases, and `sha-<commit>`.
+
+### Run with Docker Compose
+
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
@@ -109,12 +119,45 @@ docker compose up -d --build   # or: docker-compose up -d --build
 
 The stack starts two services:
 
-* `politepol` -the app container (built from the Dockerfile): `frontend/start.sh` starts nginx, Django, and the downloader; serves HTTP on port `8088`
-* `dbpolitepol` - MySQL 5.7 with a persisted volume in `./mysql`
+* `politepol` - the app image (`ghcr.io/ashcoft/pol:latest`, rebuilt locally by `--build`): `frontend/start.sh` waits for the database, starts nginx, runs migrations, loads `fields.json`, and starts the downloader plus Django; serves HTTP on port `8088`
+* `db` - MySQL 8.4 with a persisted volume in `./mysql`
 
-`wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and the Django server.
+### Run the image directly
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`.
+```bash
+docker network create pol
+docker run -d --name pol-db --network pol \
+  -e MYSQL_DATABASE=politepol -e MYSQL_USER=pol -e MYSQL_PASSWORD=politepol \
+  -e MYSQL_ROOT_PASSWORD=rootpass -v pol-mysql:/var/lib/mysql mysql:8.4
+
+docker run -d --name politepol --network pol -p 8088:8088 \
+  -e DB_NAME=politepol -e DB_USER=pol -e DB_PASSWORD=politepol \
+  -e DB_HOST=pol-db -e ALLOWED_HOSTS=localhost,127.0.0.1,[::1] \
+  ghcr.io/ashcoft/pol:latest
+```
+
+### Configuration
+
+All settings are read from the environment by `frontend/frontend/settings.py`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `pol` / `root` / `toor` | database credentials |
+| `DB_HOST` / `DB_PORT` | `127.0.0.1` / `3306` | database address |
+| `WEB_PORT` | `8088` | nginx listen port |
+| `TIME_ZONE` | `UTC` | Django time zone |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` | comma-separated hosts/IPs the app is served on |
+| `CSRF_TRUSTED_ORIGINS` | empty | comma-separated origins, needed behind a TLS terminator |
+| `SECRET_KEY` | built-in example value | Django secret key, set this in production |
+| `DEBUG` | `1` | set to `0` to disable debug mode |
+
+Publish your own build to GHCR with the `Docker image` workflow, or manually:
+
+```bash
+echo "$CR_PAT" | docker login ghcr.io -u YOUR_USERNAME --password-stdin
+docker build -t ghcr.io/ashcoft/pol:latest .
+docker push ghcr.io/ashcoft/pol:latest
+```
 
 ### Access (port 8088)
 

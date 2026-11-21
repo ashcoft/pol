@@ -4,3 +4,4 @@ frontend/frontend/static
 .*
 !.github
 !.circleci
+!.dockerignore
