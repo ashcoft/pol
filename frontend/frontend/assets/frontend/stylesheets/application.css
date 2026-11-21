@@ -547,17 +547,42 @@ body.feed-preview-open {
 }
 
 .rss-related {
-    color: #6b7280;
-    font-size: .85rem;
-    margin: 1.5rem 0 0;
+    margin: 1.5rem auto 0;
+    max-width: 42rem;
+    text-align: left;
 }
 
-.rss-related a {
+.rss-related-title {
+    color: #9ca3af;
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    margin: 0 0 .5rem;
+    text-transform: uppercase;
+}
+
+.rss-related-list {
+    list-style: disc;
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+.rss-related-list li {
+    color: #6b7280;
+    font-size: .9rem;
+    margin-bottom: .35rem;
+}
+
+.rss-related-list a {
     color: #2563eb;
     font-weight: 600;
     text-decoration: none;
 }
 
-.rss-related a:hover {
+.rss-related-list a:hover {
     text-decoration: underline;
+}
+
+.rss-related-desc {
+    color: #6b7280;
 }
