@@ -130,7 +130,7 @@ def _create_feed(url, xpathes, edited=False):
         if field.id == _BASIC_LINK_ID and _BASIC_TITLE_ID in item_xpathes and not edited:
             ff = FeedField(feed=feed, field=field, xpath= _get_link_xpath(item_xpathes[_BASIC_TITLE_ID][0]))
             ff.save()
-        elif field.id == _BASIC_IMAGE_ID and _BASIC_IMAGE_ID in item_xpathes:
+        elif field.id == _BASIC_IMAGE_ID and _BASIC_IMAGE_ID in item_xpathes and not edited:
             ff = FeedField(feed=feed, field=field, xpath=_get_image_xpath(item_xpathes[_BASIC_IMAGE_ID][0]))
             ff.save()
         elif field.id in item_xpathes:
@@ -203,7 +203,7 @@ def setup_validate_selectors(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
@@ -224,7 +224,7 @@ def setup_create_feed_ext(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
