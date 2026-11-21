@@ -388,3 +388,7 @@ def test_html_to_text_decodes_named_entities_that_end_with_a_semicolon():
     # Whitespace is normalised, so &nbsp; becomes a plain space.
     assert html_to_text('a&nbsp;b &copy; 2026') == 'a b \u00a9 2026'
     assert html_to_text('keep &copy= literal') == 'keep &copy= literal'
+
+
+def test_html_to_text_leaves_unknown_entity_names_alone():
+    assert html_to_text('&copyright; 2026') == '&copyright; 2026'

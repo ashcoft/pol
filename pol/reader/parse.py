@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import escape as html_escape
 from html import unescape as html_unescape
+from html.entities import html5
 from urllib.parse import urljoin
 
 from lxml import etree
@@ -247,9 +248,13 @@ _BASIC_ENTITY_RE = re.compile(r'&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31
 
 
 def _unescape_basic(text):
-    # Only entities that end with ';': a plain-text `&copy=` in a URL is not an entity and
-    # must survive unchanged.
-    return _BASIC_ENTITY_RE.sub(lambda match: html_unescape(match.group(0)), text)
+    # Only entities that end with ';', and only names that exist in full: Python's decoder
+    # accepts a known prefix, so `&copyright;` would otherwise become `©right;`.
+    def decode(match):
+        value = html5.get(match.group(0)[1:])
+        return value if value is not None else match.group(0)
+
+    return _BASIC_ENTITY_RE.sub(decode, text)
 
 
 def html_to_text(fragment):
