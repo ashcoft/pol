@@ -56,7 +56,10 @@
     <header class="feed-preview-header">
         <div class="feed-preview-heading">
             <div class="feed-preview-kicker">{% trans "Feed preview" %}</div>
-            <h3 id="feed-preview-heading" class="feed-preview-title"></h3>
+            <div class="feed-preview-title-row">
+                <img id="feed-preview-favicon" class="feed-preview-favicon" alt="" width="22" height="22" referrerpolicy="no-referrer">
+                <h3 id="feed-preview-heading" class="feed-preview-title"></h3>
+            </div>
         </div>
         <button type="button" id="feed-preview-close" class="feed-preview-close"
                 aria-label="{% trans 'Close preview' %}">&times;</button>

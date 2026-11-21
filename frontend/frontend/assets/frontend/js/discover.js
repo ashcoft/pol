@@ -25,6 +25,7 @@
         var toastTimer = null;
         var previewRequest = null;
         var previewSeq = 0;
+        var sourceFavicon = '';
 
         function el(tag) {
             return $(document.createElement(tag));
@@ -69,6 +70,25 @@
                 return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';
             } catch (ignore) {
                 return '';
+            }
+        }
+
+        var FALLBACK_FAVICON = '/static/frontend/images/rss-640.png';
+
+        function faviconUrl(value) {
+            try {
+                var host = new URL(value, window.location.href).hostname;
+                return host
+                    ? 'https://icons.duckduckgo.com/ip3/' + encodeURIComponent(host) + '.ico'
+                    : '';
+            } catch (ignore) {
+                return '';
+            }
+        }
+
+        function useFallbackIcon(image) {
+            if (image.src.indexOf('rss-640') === -1) {
+                image.src = FALLBACK_FAVICON;
             }
         }
 
@@ -138,6 +158,12 @@
             currentFeedUrl = feed.url;
             lastTrigger = trigger || null;
             $panelTitle.text(feed.title || feed.url);
+            $('#feed-preview-favicon')
+                .off('error')
+                .on('error', function () {
+                    useFallbackIcon(this);
+                })
+                .attr('src', sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON);
             $panelFull.attr('href', '/read?url=' + encodeURIComponent(feed.url) + '&format=html');
             $panelBody.empty().append(el('p').addClass('muted').text('Loading feed…'));
 
@@ -202,8 +228,9 @@
             window.location.assign(window.location.pathname + '?url=' + encodeURIComponent(url));
         }
 
-        function renderResults(feeds) {
+        function renderResults(feeds, sourceUrl) {
             $results.empty();
+            sourceFavicon = faviconUrl(sourceUrl);
             if (!feeds.length) {
                 return;
             }
@@ -218,6 +245,19 @@
                 seen[feed.url] = true;
 
                 var $item = el('li').addClass('feed-result');
+                var $icon = el('img').addClass('feed-result-favicon').attr({
+                    src: sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON,
+                    alt: '',
+                    width: 38,
+                    height: 38,
+                    loading: 'lazy',
+                    referrerpolicy: 'no-referrer'
+                });
+                $icon.on('error', function () {
+                    useFallbackIcon(this);
+                });
+                $item.append($icon);
+
                 var $main = el('div').addClass('feed-result-main');
                 var $head = el('div').addClass('feed-result-head');
                 el('a').addClass('feed-result-title').attr({
@@ -276,7 +316,7 @@
                     openFeedBuilder(url);
                     return;
                 }
-                renderResults(feeds);
+                renderResults(feeds, url);
                 if (window.history && window.history.replaceState) {
                     window.history.replaceState(null, '', '?q=' + encodeURIComponent(url));
                 }
