@@ -24,6 +24,10 @@ var styles = {
     'title_calculated': new Style('#78A4F9', 'white'),
     'description_manual': new Style('#2f96b4', 'white'),
     'description_calculated': new Style('#5bc0de', 'white'),
+    'date_manual': new Style('#f89406', 'white'),
+    'date_calculated': new Style('#fbb450', 'white'),
+    'image_manual': new Style('#468847', 'white'),
+    'image_calculated': new Style('#5cb85c', 'white'),
     // selection hove style
     'hover': new Style('#FFEB0D', 'black')
 };
@@ -483,6 +487,8 @@ $(document).ready(function(){
     
     items['title'] = new Item('title', $('#st-title')[0]);
     items['description'] = new Item('description', $('#st-description')[0]);
+    items['date'] = new Item('date', $('#st-date')[0]);
+    items['image'] = new Item('image', $('#st-image')[0]);
    
     $('#create').click(onCreateButtonClick);
  

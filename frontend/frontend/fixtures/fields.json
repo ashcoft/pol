@@ -1,26 +1,42 @@
 [
-{
-    "fields": {
-        "name": "title",
-        "required": 1
+    {
+        "fields": {
+            "name": "title",
+            "required": 1
+        },
+        "model": "frontend.field",
+        "pk": 1
     },
-    "model": "frontend.field",
-    "pk": 1
-},
-{
-    "fields": {
-        "name": "description",
-        "required": 1
+    {
+        "fields": {
+            "name": "description",
+            "required": 1
+        },
+        "model": "frontend.field",
+        "pk": 2
     },
-    "model": "frontend.field",
-    "pk": 2
-},
-{
-    "fields": {
-        "name": "link",
-        "required": 0
+    {
+        "fields": {
+            "name": "link",
+            "required": 0
+        },
+        "model": "frontend.field",
+        "pk": 3
     },
-    "model": "frontend.field",
-    "pk": 3
-}
+    {
+        "fields": {
+            "name": "date",
+            "required": 0
+        },
+        "model": "frontend.field",
+        "pk": 4
+    },
+    {
+        "fields": {
+            "name": "image",
+            "required": 0
+        },
+        "model": "frontend.field",
+        "pk": 5
+    }
 ]

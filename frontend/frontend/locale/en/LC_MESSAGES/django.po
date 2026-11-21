@@ -183,3 +183,15 @@ msgstr "No posts"
 #: templates/frontend/setup.html:198
 msgid "setup.link"
 msgstr "Link"
+
+msgid "setup.date"
+msgstr "Date"
+
+msgid "setup.image"
+msgstr "Image"
+
+msgid "setup.date_xpath"
+msgstr "Date xpath"
+
+msgid "setup.image_xpath"
+msgstr "Image xpath"
