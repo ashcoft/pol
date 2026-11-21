@@ -184,3 +184,15 @@ msgstr "Посты не найдены"
 #: templates/frontend/setup.html:198
 msgid "setup.link"
 msgstr "Ссылка"
+
+msgid "setup.date"
+msgstr "Дата"
+
+msgid "setup.image"
+msgstr "Изображение"
+
+msgid "setup.date_xpath"
+msgstr "Xpath даты"
+
+msgid "setup.image_xpath"
+msgstr "Xpath изображения"

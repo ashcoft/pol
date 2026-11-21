@@ -79,6 +79,8 @@ def setup_get_selected_ids(request):
         xpathes = build_xpathes_for_items(item_names, html_json)
         if 'title' in xpathes[1]:
             xpathes[1]['link'] = _get_link_xpath(xpathes[1]['title'])
+        if 'image' in xpathes[1]:
+            xpathes[1]['image'] = _get_image_xpath(xpathes[1]['image'])
 
         resp = {
             'xpathes': xpathes,
@@ -87,18 +89,33 @@ def setup_get_selected_ids(request):
 
         return HttpResponse(json.dumps(resp))
 
+
+def _xpath_base(xpath):
+    if xpath == './child::node()':
+        return '.'
+    return xpath[:len(xpath)-len('/child::node()')]
+
+
 def _get_link_xpath(title_xpath):
-    if title_xpath == './child::node()':
-        base = '.'
-    else:
-        base = title_xpath[:len(title_xpath)-len('/child::node()')]
+    base = _xpath_base(title_xpath)
     # The article link may be nested inside the title or wrap it.
     return ('(%s/descendant-or-self::node()/@href'
             ' | %s/ancestor-or-self::node()/@href)[1]') % (base, base)
 
+
+def _get_image_xpath(image_xpath):
+    base = _xpath_base(image_xpath)
+    # Lazy-loaded images keep the real URL in a data-* attribute.
+    attrs = ('src', 'data-src', 'data-original', 'data-lazy-src')
+    return '(' + ' | '.join(
+        '%s/descendant-or-self::node()/@%s' % (base, attr) for attr in attrs) + ')'
+
+
 _BASIC_TITLE_ID=1
 _BASIC_DESCRIPTION_ID=2
 _BASIC_LINK_ID=3
+_BASIC_DATE_ID=4
+_BASIC_IMAGE_ID=5
 
 def _create_feed(url, xpathes, edited=False):
     feed_xpath = xpathes[0]
@@ -112,6 +129,9 @@ def _create_feed(url, xpathes, edited=False):
     for field in fields:
         if field.id == _BASIC_LINK_ID and _BASIC_TITLE_ID in item_xpathes and not edited:
             ff = FeedField(feed=feed, field=field, xpath= _get_link_xpath(item_xpathes[_BASIC_TITLE_ID][0]))
+            ff.save()
+        elif field.id == _BASIC_IMAGE_ID and _BASIC_IMAGE_ID in item_xpathes and not edited:
+            ff = FeedField(feed=feed, field=field, xpath=_get_image_xpath(item_xpathes[_BASIC_IMAGE_ID][0]))
             ff.save()
         elif field.id in item_xpathes:
             ff = FeedField(feed=feed, field=field, xpath=item_xpathes[field.id][0])
@@ -139,6 +159,10 @@ def setup_create_feed(request):
             field_xpathes[_BASIC_TITLE_ID] = [xpathes[1]['title'], required]
         if 'description' in xpathes[1]:
             field_xpathes[_BASIC_DESCRIPTION_ID] = [xpathes[1]['description'], required]
+        if 'date' in xpathes[1]:
+            field_xpathes[_BASIC_DATE_ID] = [xpathes[1]['date'], False]
+        if 'image' in xpathes[1]:
+            field_xpathes[_BASIC_IMAGE_ID] = [xpathes[1]['image'], False]
         xpathes[1] = field_xpathes
 
         feed_id = _create_feed(url, xpathes)
@@ -179,7 +203,7 @@ def setup_validate_selectors(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
@@ -200,7 +224,7 @@ def setup_create_feed_ext(request):
         selectors = obj['selectors']
         file_name = obj['snapshot_time']
 
-        if not re.match('^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
+        if not re.match(r'^\d{10}\.\d+_[\da-f]{32}\Z', file_name):
             return HttpResponseBadRequest('"snapshot_time" is invalid')
 
         validated_selectors = _validate_selectors(selectors)
