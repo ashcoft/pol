@@ -163,7 +163,6 @@ PIPELINE = {
               'frontend/js/jquery.jfeed.js',
               'frontend/js/bootstrap.js',
               'frontend/js/bootstrap_and_overrides.js',
-              'frontend/js/xregexp-all.js',
               'frontend/js/google-code-prettify/prettify.js',
               'frontend/js/setup-tool.js',
               'frontend/js/setup-tool-ext.js',
