@@ -10,7 +10,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 django.setup()
 
 
-@override_settings(ROOT_URLCONF='frontend.frontend.urls')
+@override_settings(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'])
 def test_index_redirects_to_local_setup_page():
     response = Client().get('/en/', {'url': 'example.com/story'})
     assert response.status_code == 302
@@ -21,7 +21,7 @@ def test_index_redirects_to_local_setup_page():
     assert 'example.com/story' in unquote(location)
 
 
-@override_settings(ROOT_URLCONF='frontend.frontend.urls')
+@override_settings(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'])
 def test_index_rejects_invalid_url_without_redirecting():
     response = Client().get('/en/', {'url': 'javascript:alert(1)'})
     assert response.status_code == 200
