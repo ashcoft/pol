@@ -90,9 +90,9 @@
                 }
                 for (var i = attributes.length - 1; i >= 0; i--) {
                     var name = attributes[i].name.toLowerCase();
-                    var value = (attributes[i].value || '').trim().toLowerCase();
-                    if (name.indexOf('on') === 0 || name === 'srcdoc' ||
-                        ((name === 'href' || name === 'src') && value.indexOf('javascript:') === 0)) {
+                    var value = attributes[i].value || '';
+                    var unsafeLink = (name === 'href' || name === 'src') && !safeUrl(value);
+                    if (name.indexOf('on') === 0 || name === 'srcdoc' || unsafeLink) {
                         this.removeAttribute(attributes[i].name);
                     }
                 }
