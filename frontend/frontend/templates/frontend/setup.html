@@ -62,8 +62,10 @@
         <h2 style="display: inline; line-height:inherit" id="setup-tool-string">
             {% trans 'setup.you_are_creating_feed_with' %} 
             <button id="st-title" class="btn btn-large has-tooltip" title="{% trans 'setup.help' %}"
-                data-trigger="hover focus manual" data-animation="true">{% trans 'setup.title' %}</button> {% trans 'setup.and' %} 
-            <button id="st-description" class="btn btn-large">{% trans 'setup.description' %}</button>.
+                data-trigger="hover focus manual" data-animation="true">{% trans 'setup.title' %}</button>, 
+            <button id="st-description" class="btn btn-large">{% trans 'setup.description' %}</button>,
+            <button id="st-date" class="btn btn-large">{% trans 'setup.date' %}</button> {% trans 'setup.and' %}
+            <button id="st-image" class="btn btn-large">{% trans 'setup.image' %}</button>.
         </h2>
     </div>
     <div id="st-extended" style="float:left; display:none">
@@ -96,6 +98,20 @@
 												<option selected="selected" value="0">{% trans 'setup.Optional' %}</option>
 										<select>
 										<input type="text" id="ste-link" class="input-xxlarge" placeholder="{% trans 'setup.skipped' %}" autocomplete="off"/>
+										<span class="help-inline" count-tpl="{% trans 'setup.Selected' %}"></span>
+								</div>
+						</div>
+						<div class="control-group info">
+              <label class="control-label">{% trans 'setup.date_xpath' %}:</label>
+								<div class="controls">
+										<input type="text" id="ste-date" class="input-xxlarge" placeholder="{% trans 'setup.skipped' %}" autocomplete="off"/>
+										<span class="help-inline" count-tpl="{% trans 'setup.Selected' %}"></span>
+								</div>
+						</div>
+						<div class="control-group info">
+              <label class="control-label">{% trans 'setup.image_xpath' %}:</label>
+								<div class="controls">
+										<input type="text" id="ste-image" class="input-xxlarge" placeholder="{% trans 'setup.skipped' %}" autocomplete="off"/>
 										<span class="help-inline" count-tpl="{% trans 'setup.Selected' %}"></span>
 								</div>
 						</div>

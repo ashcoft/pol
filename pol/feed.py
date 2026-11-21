@@ -5,9 +5,12 @@ import six
 from lxml import etree
 from lxml import html as lxml_html
 import hashlib
+import html
+import mimetypes
 import re, sys
 from hashlib import md5
 
+from dateutil import parser as date_parser
 from feedgenerator import Rss201rev2Feed, Enclosure
 import datetime
 
@@ -63,13 +66,31 @@ def _normalize_images(fragment, base_url):
         etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
+def _parse_date(value):
+    """Parse a human-readable date from a page into an aware datetime."""
+    if not value:
+        return None
+    try:
+        parsed = date_parser.parse(re.sub(r'<[^>]+>', ' ', value), fuzzy=True)
+    except (ValueError, OverflowError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed
+
+
+def _image_mime(url):
+    mime, _ = mimetypes.guess_type(url)
+    return mime if mime and mime.startswith('image/') else 'image/jpeg'
+
+
 class Feed(object):
 
     url_hash_regexp = re.compile('(#.*)?$')
 
     POST_TIME_DISTANCE = 15 # minutes, RSS Feed Reader skip same titles created in 10 min interval
 
-    FIELD_IDS = {'title': 1, 'description': 2, 'link': 3}
+    FIELD_IDS = {'title': 1, 'description': 2, 'link': 3, 'date': 4, 'image': 5}
 
     def __init__(self, db_creds):
         self.db_creds = db_creds
@@ -141,14 +162,20 @@ class Feed(object):
             item = {}
             required_count = 0
             required_found = 0
-            for field_name in ['title', 'description', 'link']:
+            for field_name in ['title', 'description', 'link', 'date', 'image']:
                 if field_name in feed_config['fields']:
                     if feed_config['required'][field_name]:
                         required_count += 1
 
                     extracted = node.xpath(feed_config['fields'][field_name]).extract()
+                    if field_name == 'image':
+                        # Lazy images expose placeholders next to the real URL.
+                        extracted = [v for v in extracted if v and not v.startswith('data:')]
                     if extracted:
-                        item[field_name] = u''.join(extracted)
+                        if field_name == 'image':
+                            item['image'] = extracted[0]
+                        else:
+                            item[field_name] = u''.join(extracted)
                         if feed_config['required'][field_name]:
                             required_found += 1
                         if field_name == 'link':
@@ -176,7 +203,13 @@ class Feed(object):
             title = re.sub(r'<[^>]+>', '', title).strip()
             desc = item['description'] if 'description' in item else ''
             desc = _normalize_images(desc, base_url)
-            time = item['time'] if 'time' in item else datetime.datetime.utcnow()
+            image = item.get('image')
+            if image:
+                image = self._build_link(page_unicode, feed_config['uri'], image)
+                if image not in desc:
+                    desc = '<img src="%s" alt="" />' % html.escape(image) + desc
+            time = (_parse_date(item.get('date')) or item.get('time')
+                    or datetime.datetime.utcnow())
             if 'link' in item:
                 link = item['link']
             else:
@@ -188,6 +221,7 @@ class Feed(object):
                 link = link,
                 unique_id = link,
                 description = desc,
+                enclosures=[Enclosure(image, '0', _image_mime(image))] if image else (),
                 #enclosure=Enclosure(fields[4], "32000", "image/jpeg") if  4 in fields else None, #"Image"
                 pubdate = time
             )
