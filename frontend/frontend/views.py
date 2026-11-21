@@ -1,4 +1,6 @@
+import urllib.error
 import urllib.parse
+import urllib.request
 import json
 import re
 
@@ -10,12 +12,17 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
 
-from .forms import IndexForm
-from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
+from pol.reader.errors import InvalidURLError
+from pol.reader.urls import normalize_url
 
+from . import settings as frontend_settings
+from .forms import IndexForm
+from .models import Feed, Field, FeedField
+from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
 from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
 from .setup_tool_ext import build_xpath_results
-from .models import Feed, Field, FeedField
+
+DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
 
 def index(request):
     if request.method == 'GET' and 'url' in request.GET:
@@ -284,3 +291,27 @@ def preview(request, feed_id):
                         })
 
     return HttpResponseBadRequest('Only GET method supported')
+
+
+def discover(request):
+    """Proxy feed discovery to the downloader (used by the index page and dev)."""
+    url = (request.GET.get('url') or '').strip()
+    if not url:
+        return HttpResponseBadRequest('Url is required')
+    try:
+        url = normalize_url(url)
+    except InvalidURLError:
+        return HttpResponseBadRequest('Invalid url')
+
+    target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
+    try:
+        with urllib.request.urlopen(target, timeout=30) as response:
+            payload = response.read()
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        return HttpResponse(exc.read(), status=exc.code,
+                            content_type='application/json')
+    except Exception:
+        return HttpResponse(json.dumps({'error': 'Feed discovery failed'}),
+                            status=502, content_type='application/json')
+    return HttpResponse(payload, status=status, content_type='application/json')

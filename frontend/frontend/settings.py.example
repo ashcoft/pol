@@ -167,6 +167,7 @@ PIPELINE = {
               'frontend/js/google-code-prettify/prettify.js',
               'frontend/js/setup-tool.js',
               'frontend/js/setup-tool-ext.js',
+              'frontend/js/discover.js',
               'frontend/js/help.js',
             ),
             'output_filename': 'frontend/js/app.js',
@@ -182,3 +183,13 @@ DOWNLOADER_USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 
 # limit of seconds in which user can access separate feed
 FEED_REQUEST_PERIOD_LIMIT = 0
 SNAPSHOT_DIR = '/tmp'
+
+# Feed reader / discovery (used by downloader.py and the Django discovery proxy)
+CACHE_BACKEND = os.environ.get('POL_CACHE_BACKEND', 'memory')  # memory, redis, diskcache, none
+CACHE_DIR = os.environ.get('POL_CACHE_DIR', '/tmp/pol-cache')
+CACHE_TTL = int(os.environ.get('POL_CACHE_TTL', '3600'))
+REDIS_URL = os.environ.get('POL_REDIS_URL', 'redis://127.0.0.1:6379/0')
+READER_TIMEOUT = float(os.environ.get('POL_READER_TIMEOUT', '20'))
+READER_MAX_SIZE = int(os.environ.get('POL_READER_MAX_SIZE', str(8 * 1024 * 1024)))
+READER_VERIFY_SSL = os.environ.get('POL_READER_VERIFY_SSL', '1').lower() not in ('0', 'false', 'no')
+DOWNLOADER_BASE_URL = os.environ.get('DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')

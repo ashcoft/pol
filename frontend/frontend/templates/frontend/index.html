@@ -35,6 +35,14 @@
             </div>
         </div>
     </form>
+
+    <div class="feed-finder">
+        <h3>{% trans "Find RSS feeds" %}</h3>
+        <p class="muted">{% trans "Enter a page URL above, then look for feeds it already publishes." %}</p>
+        <button type="button" id="find-feeds-btn" class="btn">{% trans "Find feeds" %}</button>
+        <div id="feed-finder-status" class="muted" style="margin-top: .5rem"></div>
+        <ul id="feed-finder-results" class="unstyled"></ul>
+    </div>
 </div>
 <!-- Modal -->
 <div id="helpModal" class="modal hide fade" style="position:absolute" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">

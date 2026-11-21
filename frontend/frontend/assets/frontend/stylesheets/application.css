@@ -47,6 +47,24 @@ body {
     margin: 0;
 }
 
+/* Feed discovery on the index page */
+.feed-finder {
+    margin-top: 2rem;
+    text-align: left;
+}
+
+.feed-finder ul {
+    margin-top: .75rem;
+}
+
+.feed-finder li {
+    margin-bottom: .5rem;
+}
+
+.feed-finder .btn-mini {
+    margin-left: .5rem;
+}
+
 /* Lastly, apply responsive CSS fixes as necessary */
 @media (max-width: 767px) {
     #footer {
