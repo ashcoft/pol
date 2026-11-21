@@ -148,3 +148,15 @@ def test_disk_cache_roundtrips_bytes(tmp_path):
     cache = DiskCache(str(tmp_path))
     cache.set('body', {'body': b'\x00\xff\x01', 'status': 200})
     assert cache.get('body') == {'body': b'\x00\xff\x01', 'status': 200}
+
+
+def test_file_cache_enforces_a_byte_budget(tmp_path):
+    from pol.reader.cache import _FileCache
+
+    cache = _FileCache(str(tmp_path), max_entries=100, max_bytes=2048)
+    for index in range(20):
+        cache.set('key-%d' % index, {'body': b'x' * 512})
+
+    total = sum(entry.stat().st_size for entry in os.scandir(str(tmp_path))
+                if entry.name.endswith('.cache'))
+    assert total <= 2048

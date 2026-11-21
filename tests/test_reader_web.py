@@ -180,3 +180,13 @@ def test_feed_preview_uses_content_when_summary_is_missing(reader_server, http_s
                     url=http_server.base_url + '/content-only.xml')
     payload = json.loads(response.read().decode('utf-8'))
     assert 'Only content' in payload['items'][0]['summary']
+
+
+def test_request_cannot_enable_private_fetching():
+    from pol.reader.pipeline import Options
+    from pol.reader.web import ReaderEndpoints, _effective_allow_private
+
+    endpoints = ReaderEndpoints('pol-test/1', cache_backend='memory')
+    options = Options(format='rss', allow_private=True)
+
+    assert _effective_allow_private(endpoints, options) is False

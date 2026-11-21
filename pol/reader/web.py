@@ -53,8 +53,8 @@ def _int_arg(request, name, default):
 
 
 def _effective_allow_private(endpoints, options):
-    if options.allow_private:
-        return True
+    # Never taken from the request: an unauthenticated caller must not be able to reach
+    # private services. Only the operator's setting counts.
     if endpoints.allow_private is not None:
         return endpoints.allow_private
     if endpoints.block_private_hosts is not None:
@@ -124,7 +124,6 @@ class ReaderEndpoints:
             user_agent=self.user_agent,
             verify_ssl=self.verify_ssl,
             follow_meta=not _flag(request, 'no_meta'),
-            allow_private=True if _flag(request, 'allow_private') else None,
         )
 
     def get(self, request):

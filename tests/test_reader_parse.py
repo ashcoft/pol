@@ -369,3 +369,11 @@ def test_media_content_file_size_becomes_the_enclosure_length():
 </rss>"""
     item = parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml').items[0]
     assert item.enclosures[0]['length'] == '2048'
+
+
+def test_json_feed_keeps_content_text_when_html_is_empty():
+    payload = ('{"version": "https://jsonfeed.org/version/1.1", "title": "T",'
+               ' "items": [{"id": "1", "content_html": "", "content_text": "Tom & Jerry"}]}')
+    feed = parse_feed(payload.encode('utf-8'), 'https://example.com/feed.json')
+    assert 'Tom' in feed.items[0].content
+    assert html_to_text(feed.items[0].content) == 'Tom & Jerry'

@@ -15,8 +15,8 @@ from lxml import html as lxml_html
 
 from . import charset
 from .cache import HttpCache
-from .errors import FetchError
-from .safety import assert_public_url
+from .errors import FetchError, InvalidURLError
+from .safety import assert_public_url, resolve_addresses
 from .urls import clean_url, normalize_url
 
 DEFAULT_USER_AGENT = 'pol-reader/1.0 (+https://github.com/ashcoft/pol)'
@@ -78,11 +78,15 @@ class Response:
                 or head.startswith(b'{"version"'))
 
 
-def ensure_public_url(url, allow_private=False):
-    """Reject destinations that resolve to non-public addresses."""
+def ensure_public_url(url, allow_private=False, resolve=True):
+    """Reject destinations that resolve to non-public addresses.
+
+    ``resolve=False`` skips the DNS lookup, which is what a cache hit needs: the literal
+    host is still checked, but an offline read does not depend on a resolver.
+    """
     if allow_private:
         return
-    assert_public_url(url)
+    assert_public_url(url, resolve_addresses if resolve else None)
 
 
 class GuardedRedirectHandler(urllib_request.HTTPRedirectHandler):
@@ -122,6 +126,9 @@ class UrllibTransport:
             response = self._opener.open(req, timeout=self.timeout)
         except error.HTTPError as exc:
             response = exc
+        except InvalidURLError:
+            # The redirect guard rejected a hop; keep the guard's error type.
+            raise
         except (error.URLError, OSError, ValueError) as exc:
             raise FetchError('Could not fetch %s: %s' % (url, exc), url=url) from exc
 
@@ -179,6 +186,9 @@ class Fetcher:
         if self.cache_only:
             if not cached:
                 raise FetchError('URL is not in the cache', url=url)
+            # A shared cache can hold a private feed; check the literal host, without DNS,
+            # so an offline read still works.
+            ensure_public_url(url, self.allow_private, resolve=False)
             response = Response(url=cached.get('url', url), status=200,
                                 headers=cached.get('headers', {}),
                                 body=cached.get('body', b''))

@@ -157,3 +157,30 @@ def test_offline_fetch_follows_cached_meta_refresh(http_server):
 def test_offline_resolve_does_not_touch_the_network():
     url = 'http://127.0.0.1:1/never'
     assert Fetcher(cache_only=True, allow_private=True).resolve(url) == url
+
+
+def test_transport_keeps_the_guard_error_type(monkeypatch):
+    from pol.reader.errors import InvalidURLError
+    from pol.reader.http import UrllibTransport
+
+    transport = UrllibTransport(allow_private=False)
+
+    def boom(*args, **kwargs):
+        raise InvalidURLError('URL host is not allowed')
+
+    monkeypatch.setattr(transport._opener, 'open', boom)
+    with pytest.raises(InvalidURLError):
+        transport.request('https://example.com/feed.xml', {})
+
+
+def test_offline_read_rejects_a_private_cached_url(tmp_path):
+    from pol.reader.cache import HttpCache, make_cache
+    from pol.reader.errors import InvalidURLError
+
+    cache = HttpCache(make_cache('disk', directory=str(tmp_path)), ttl=3600)
+    cache.store('http://127.0.0.1/feed.xml', 200,
+                {'content-type': 'application/rss+xml'}, b'<rss/>')
+    fetcher = Fetcher(cache=cache, cache_only=True, block_private_hosts=True)
+
+    with pytest.raises(InvalidURLError):
+        fetcher.fetch('http://127.0.0.1/feed.xml')

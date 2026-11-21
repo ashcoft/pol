@@ -138,3 +138,10 @@ def test_rss_preserves_cdata_terminator():
     parsed = parse_feed(to_rss(feed).encode(), 'https://example.com/feed')
     assert parsed.items[0].summary == 'a]]>b'
     assert parsed.items[0].content == 'x]]>y'
+
+
+def test_rss_self_link_points_at_the_feed_not_the_homepage():
+    data = to_rss(_feed())
+    assert 'rel="self"' in data
+    assert 'href="https://example.com/feed"' in data
+    assert '<link>https://example.com/</link>' in data

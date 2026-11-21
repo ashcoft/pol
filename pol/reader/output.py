@@ -67,8 +67,9 @@ def to_rss(feed, clip=False):
     etree.SubElement(channel, 'description').text = html_to_text(feed.description) or (feed.title or 'pol feed')
     if feed.language:
         etree.SubElement(channel, 'language').text = feed.language
-    if feed_link:
-        etree.SubElement(channel, _ATOM + 'link', rel='self', href=feed_link,
+    feed_url = _safe_url(feed.url)
+    if feed_url:
+        etree.SubElement(channel, _ATOM + 'link', rel='self', href=feed_url,
                          type='application/rss+xml')
 
     for item in feed.items:

@@ -111,9 +111,10 @@ def _decode_value(value):
 class _FileCache(BaseCache):
     """Disk-backed cache using JSON-safe serialization."""
 
-    def __init__(self, directory, max_entries=10000):
+    def __init__(self, directory, max_entries=10000, max_bytes=256 * 1024 * 1024):
         self.directory = os.path.abspath(directory)
         self.max_entries = max(1, int(max_entries))
+        self.max_bytes = max(1, int(max_bytes))
         self._lock = threading.RLock()
         os.makedirs(self.directory, exist_ok=True)
 
@@ -158,18 +159,22 @@ class _FileCache(BaseCache):
                        if entry.name.endswith('.cache')]
         except OSError:
             return
-        excess = len(entries) - self.max_entries
-        if excess <= 0:
-            return
         try:
             entries.sort(key=lambda entry: entry.stat().st_mtime)
+            sizes = [entry.stat().st_size for entry in entries]
         except OSError:
             return
-        for entry in entries[:excess]:
+        excess = len(entries) - self.max_entries
+        total = sum(sizes)
+        while entries and (excess > 0 or total > self.max_bytes):
+            entry = entries.pop(0)
+            size = sizes.pop(0)
             try:
                 os.unlink(entry.path)
             except OSError:
-                pass
+                continue
+            total -= size
+            excess -= 1
 
     def delete(self, key):
         try:

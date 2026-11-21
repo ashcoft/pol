@@ -318,12 +318,12 @@ def discover(request):
     except ValueError:
         return HttpResponseBadRequest('Invalid url')
 
-    if not url.startswith(('http://', 'https://')):
+    if not url.lower().startswith(('http://', 'https://')):
         return HttpResponseBadRequest('Invalid url')
 
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:
-        with urllib.request.urlopen(target, timeout=10) as response:  # nosec B310
+        with urllib.request.urlopen(target, timeout=35) as response:  # nosec B310
             payload = response.read()
             status = response.status
     except urllib.error.HTTPError as exc:

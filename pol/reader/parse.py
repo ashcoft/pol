@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import escape as html_escape
+from html import unescape as html_unescape
 from urllib.parse import urljoin
 
 from lxml import etree
@@ -246,7 +247,7 @@ def html_to_text(fragment):
     if not fragment:
         return ''
     if '<' not in fragment:
-        return re.sub(r'\s+', ' ', fragment).strip()
+        return re.sub(r'\s+', ' ', html_unescape(fragment)).strip()
     try:
         root = lxml_html.fragment_fromstring(fragment, create_parent='div')
     except (etree.ParserError, ValueError, TypeError):
@@ -407,7 +408,7 @@ def parse_json_feed(text, url=''):
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if entry.get('content_html') is not None:
+        if entry.get('content_html'):
             content = str(entry['content_html'])
         else:
             content = html_escape(str(entry.get('content_text') or ''))
