@@ -187,7 +187,7 @@ class Downloader(object):
 
     def downloadError(self, error):
         # read for details: https://stackoverflow.com/questions/29423986/twisted-giving-twisted-web-client-partialdownloaderror-200-ok
-        if error.type is PartialDownloadError and error.value.status == '200':
+        if error.type is PartialDownloadError and error.value.response is not None:
             d = defer.Deferred()
             reactor.callLater(0, d.callback, error.value.response) # error.value.response is response_str
             d.addCallback(self.downloadDone)
@@ -256,6 +256,22 @@ class Downloader(object):
     def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
         sresponse = self._decompress(sresponse)
 
+        # Pages behind bot protection (Cloudflare and friends) return a
+        # challenge instead of content. Report it for feeds too, so challenge
+        # markup is never published as posts.
+        if self._is_bot_challenge(sresponse.body):
+            self._write_error(
+                502, 'This site blocks automated access',
+                'The page answered with a bot-protection challenge (for example '
+                'Cloudflare\'s "Just a moment..."), so its content cannot be read '
+                'here. Try another page or subscribe to the site\'s own RSS feed.')
+            return
+        if sresponse.status >= 400:
+            self._write_error(
+                sresponse.status, 'The page returned HTTP %s' % sresponse.status,
+                self._status_detail(sresponse.status))
+            return
+
         response_headers = self.prepare_response_headers(sresponse.headers)
 
         if (isinstance(sresponse, TextResponse)):
@@ -276,6 +292,48 @@ class Downloader(object):
 
     # A small compressed body can expand to hundreds of megabytes.
     MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
+
+    # Only challenge-specific signals: a normal article may quote a phrase
+    # like "Just a moment..." or load Cloudflare's JavaScript Detections.
+    BOT_CHALLENGE_TITLES = (
+        b'just a moment...',
+        b'attention required! | cloudflare',
+        b'checking your browser before accessing',
+        b'enable javascript and cookies to continue',
+    )
+    BOT_CHALLENGE_MARKERS = (
+        b'id="cf-challenge-running"',
+        b'id="challenge-form"',
+        b'cf-browser-verification',
+        b'_cf_chl_opt',
+    )
+
+    def _is_bot_challenge(self, body):
+        title = re.search(rb'<title[^>]*>(.*?)</title>', body, re.S | re.I)
+        if title:
+            normalized = b' '.join(title.group(1).lower().split())
+            if any(phrase in normalized for phrase in self.BOT_CHALLENGE_TITLES):
+                return True
+        lowered = body.lower()
+        return any(marker in lowered for marker in self.BOT_CHALLENGE_MARKERS)
+
+    @staticmethod
+    def _status_detail(status):
+        if status == 404:
+            return 'The page was not found.'
+        if status in (401, 403):
+            return 'The site refused the request, so there is nothing to pick elements from.'
+        if status >= 500:
+            return 'The site returned a server error, so there is nothing to pick elements from.'
+        return 'The site returned an error, so there is nothing to pick elements from.'
+
+    def _write_error(self, status, title, detail):
+        page = self.error_html(
+            '<h1>PolitePol says: "%s"</h1>\n<p>%s</p>' % (escape(title), escape(detail)))
+        self.request.setResponseCode(status)
+        self.request.setHeader(b'Content-Type', b'text/html; charset=utf-8')
+        self.request.write(page.encode('utf-8'))
+        self.request.finish()
 
     def _decompress(self, response):
         header = response.headers.get(b'Content-Encoding', b'')
@@ -305,11 +363,26 @@ class Downloader(object):
             except zlib.error:
                 return self._bounded_decompress(zlib.decompressobj(-zlib.MAX_WBITS), body)
         if coding == b'br':
-            body = brotli.decompress(body)
-            if len(body) > self.MAX_DECOMPRESSED_SIZE:
-                raise ValueError('Decompressed response is too large')
-            return body
+            return self._bounded_brotli(body)
         return body
+
+    BROTLI_CHUNK_SIZE = 1024 * 1024
+
+    def _bounded_brotli(self, body):
+        decompressor = brotli.Decompressor()
+        parts = []
+        total = 0
+        chunk = decompressor.process(body, output_buffer_limit=self.BROTLI_CHUNK_SIZE)
+        while True:
+            parts.append(chunk)
+            total += len(chunk)
+            if total > self.MAX_DECOMPRESSED_SIZE:
+                raise ValueError('Decompressed response is too large')
+            if decompressor.is_finished():
+                return b''.join(parts)
+            chunk = decompressor.process(b'', output_buffer_limit=self.BROTLI_CHUNK_SIZE)
+            if not chunk:
+                raise ValueError('Incomplete brotli stream')
 
     def _bounded_decompress(self, decompressor, body):
         out = decompressor.decompress(body, self.MAX_DECOMPRESSED_SIZE)
@@ -391,8 +464,15 @@ class Site(resource.Resource):
                 b'GET',
                 url.encode('utf-8'),
                 twisted_headers({
-                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
-                    b'Accept-Encoding': [b'gzip, deflate, sdch'],
+                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,'
+                                b'image/avif,image/webp,*/*;q=0.8'],
+                    b'Accept-Language': [b'en-US,en;q=0.9'],
+                    b'Accept-Encoding': [b'gzip, deflate, br'],
+                    b'Upgrade-Insecure-Requests': [b'1'],
+                    b'Sec-Fetch-Dest': [b'document'],
+                    b'Sec-Fetch-Mode': [b'navigate'],
+                    b'Sec-Fetch-Site': [b'none'],
+                    b'Sec-Fetch-User': [b'?1'],
                     b'User-Agent': [self.user_agent.encode('utf-8')]
                 }),
                 None
