@@ -26,10 +26,12 @@ SECRET_KEY = 'e2e%g-cu_f9=#^5=(8et$@(y+wu+dflyi2h)nim#r0-m=kqd^@'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# Hosts allowed to serve the app. Deployments are usually reached by LAN IP
-# or hostname (see readme), so default to any host; set ALLOWED_HOSTS as a
-# comma-separated list to restrict it in production.
-ALLOWED_HOSTS = [host for host in os.environ.get('ALLOWED_HOSTS', '*').split(',') if host]
+# Hosts allowed to serve the app. Loopback only by default; set ALLOWED_HOSTS
+# to a comma-separated list of the names or IPs you actually use (for example
+# "192.168.0.10" or "feeds.example.com") when serving on another address.
+ALLOWED_HOSTS = [host.strip() for host in
+                 os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1]').split(',')
+                 if host.strip()]
 
 
 # Application definition
