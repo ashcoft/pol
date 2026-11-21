@@ -12,9 +12,6 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
 
-from pol.reader.errors import InvalidURLError
-from pol.reader.urls import normalize_url
-
 from . import settings as frontend_settings
 from .forms import IndexForm
 from .models import Feed, Field, FeedField
@@ -23,6 +20,25 @@ from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
 from .setup_tool_ext import build_xpath_results
 
 DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
+
+_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):(?!\d)', re.IGNORECASE)
+
+
+def _normalize_discovery_url(url):
+    """Mirror pol.reader.urls.normalize_url without importing the reader package."""
+    trimmed = (url or '').strip()
+    if not trimmed:
+        raise ValueError('URL is required')
+    scheme = _SCHEME_RE.match(trimmed)
+    candidate = trimmed if scheme else 'https://' + trimmed
+    try:
+        parts = urllib.parse.urlsplit(candidate)
+        parts.port  # noqa: B018 - validates the port
+    except ValueError as exc:
+        raise ValueError('Invalid URL format') from exc
+    if parts.scheme.lower() not in ('http', 'https') or not parts.hostname:
+        raise ValueError('Invalid URL format')
+    return candidate
 
 def index(request):
     if request.method == 'GET' and 'url' in request.GET:
@@ -299,8 +315,8 @@ def discover(request):
     if not url:
         return HttpResponseBadRequest('Url is required')
     try:
-        url = normalize_url(url)
-    except InvalidURLError:
+        url = _normalize_discovery_url(url)
+    except ValueError:
         return HttpResponseBadRequest('Invalid url')
 
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
