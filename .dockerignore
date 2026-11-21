@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+.circleci
+mysql
+**/__pycache__
+*.pyc
+frontend/frontend/settings.py
+frontend/frontend/static
+tests
