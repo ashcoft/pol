@@ -44,7 +44,7 @@ def test_to_rss_has_items_content_and_enclosure():
 
 def test_to_json_is_json_feed():
     data = json.loads(to_json(_feed()))
-    assert data['version'].startswith('https://jsonfeed.org')
+    assert data['version'] == 'https://jsonfeed.org/version/1.1'
     assert data['title'] == 'Example & Co'
     assert data['items'][0]['content_html'].startswith('<p>Full')
     assert data['items'][0]['date_published'] == '2026-11-21T10:00:00Z'
