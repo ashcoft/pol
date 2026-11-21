@@ -95,6 +95,9 @@ def _enclosures(element):
             return
         entry = {'url': url, 'type': kind or 'application/octet-stream',
                  'length': _attr(child, 'length'), 'medium': medium}
+        if name == 'thumbnail':
+            # media:thumbnail already says the URL is artwork, even without a type.
+            entry['thumbnail'] = True
         if entry not in found:
             found.append(entry)
 
@@ -238,6 +241,8 @@ def html_to_text(fragment):
 
 
 def _is_image_enclosure(enclosure):
+    if enclosure.get('thumbnail') or (enclosure.get('medium') or '') == 'image':
+        return True
     kind = (enclosure.get('type') or '').lower()
     if kind.startswith('image/'):
         return True
@@ -258,9 +263,12 @@ def _first_img_src(fragment):
     for element in root.iter('img'):
         if not isinstance(element.tag, str):
             continue
-        source = (element.get('src') or '').strip()
-        if source and not source.lower().startswith(('data:', 'javascript:')):
-            return source
+        # A lazy-loaded image keeps the real URL in data-src and a placeholder in src.
+        candidates = [element.get('src')] + [element.get(attr) for attr in _LAZY_ATTRS]
+        for candidate in candidates:
+            source = (candidate or '').strip()
+            if source and not source.lower().startswith(('data:', 'javascript:')):
+                return source
     return ''
 
 

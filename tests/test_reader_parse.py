@@ -250,3 +250,28 @@ def test_video_enclosure_is_kept_but_not_used_as_an_image():
     item = parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml').items[0]
     assert [enclosure['url'] for enclosure in item.enclosures] == ['https://example.com/clip.mp4']
     assert item.images == []
+
+
+def test_extensionless_media_thumbnail_is_used_as_an_image():
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel><title>T</title><link>https://example.com/</link>
+    <item><title>A</title><link>https://example.com/a</link>
+      <media:content url="https://cdn.example.com/clip" type="video/mp4">
+        <media:thumbnail url="https://cdn.example.com/thumb/42"/>
+      </media:content>
+    </item>
+    <item><title>B</title><link>https://example.com/b</link>
+      <media:content url="https://cdn.example.com/hero" medium="image"/>
+    </item>
+  </channel>
+</rss>"""
+    feed = parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml')
+    assert feed.items[0].images == ['https://cdn.example.com/thumb/42']
+    assert feed.items[1].images == ['https://cdn.example.com/hero']
+
+
+def test_lazy_loaded_image_falls_back_to_data_src():
+    item = _item_with_description(
+        '<img src="data:image/gif;base64,AAAA" data-src="/photo.jpg">')
+    assert item.images == ['https://example.com/photo.jpg']
