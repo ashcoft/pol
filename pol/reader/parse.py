@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
+from xml.sax.saxutils import escape as escape_markup
 
 from lxml import etree
 from lxml import html as lxml_html
@@ -220,12 +221,25 @@ def sanitize_html(fragment):
 def _drop(element):
     parent = element.getparent()
     if parent is not None:
+        # Keep the text that followed the dropped element.
+        tail = element.tail or ''
+        previous = element.getprevious()
+        if previous is not None:
+            previous.tail = (previous.tail or '') + tail
+        else:
+            parent.text = (parent.text or '') + tail
         parent.remove(element)
 
 
 def _inner_html(element):
-    return (element.text or '') + ''.join(
-        etree.tostring(child, encoding='unicode', method='html') for child in element)
+    # Text nodes are escaped here: a feed that writes `&lt;script&gt;` must come back as
+    # text, not as markup the browser will execute.
+    parts = [escape_markup(element.text or '')]
+    for child in element:
+        parts.append(etree.tostring(child, encoding='unicode', method='html'))
+        if child.tail:
+            parts.append(escape_markup(child.tail))
+    return ''.join(parts)
 
 
 def html_to_text(fragment):

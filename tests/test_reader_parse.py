@@ -275,3 +275,15 @@ def test_lazy_loaded_image_falls_back_to_data_src():
     item = _item_with_description(
         '<img src="data:image/gif;base64,AAAA" data-src="/photo.jpg">')
     assert item.images == ['https://example.com/photo.jpg']
+
+
+def test_sanitize_escapes_text_that_looks_like_markup():
+    cleaned = sanitize_html('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>')
+    assert '<script>' not in cleaned
+    assert '&lt;script&gt;' in cleaned
+
+
+def test_sanitize_keeps_text_after_a_dropped_element():
+    cleaned = sanitize_html('<p>before<script>x()</script>after</p>')
+    assert '<script' not in cleaned
+    assert 'before' in cleaned and 'after' in cleaned

@@ -22,6 +22,7 @@
         var currentFeedUrl = '';
         var lastTrigger = null;
         var toastTimer = null;
+        var previewToken = 0;
 
         function showToast(message) {
             $toast.text(message).addClass('is-visible');
@@ -52,6 +53,19 @@
             }
         }
 
+        // Feed content is untrusted: only http(s) destinations become links or images.
+        function safeUrl(value) {
+            if (!value) {
+                return '';
+            }
+            try {
+                var parsed = new URL(value, window.location.href);
+                return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';
+            } catch (ignore) {
+                return '';
+            }
+        }
+
         function formatDate(value) {
             if (!value) {
                 return '';
@@ -72,12 +86,13 @@
                 var $article = $('<article>').addClass('feed-preview-item');
                 var $title = $('<h4>').addClass('feed-preview-item-title');
 
-                if (item.link) {
+                var href = safeUrl(item.link);
+                if (href) {
                     $('<a>').attr({
-                        href: item.link,
+                        href: href,
                         target: '_blank',
-                        rel: 'noopener'
-                    }).text(item.title || item.link).appendTo($title);
+                        rel: 'noopener noreferrer'
+                    }).text(item.title || href).appendTo($title);
                 } else {
                     $title.text(item.title || '(untitled)');
                 }
@@ -88,9 +103,10 @@
                         .text(formatDate(item.date)).appendTo($article);
                 }
 
-                if (item.image) {
+                var image = safeUrl(item.image);
+                if (image) {
                     $('<img>').addClass('feed-preview-image').attr({
-                        src: item.image,
+                        src: image,
                         alt: '',
                         loading: 'lazy'
                     }).appendTo($article);
@@ -106,6 +122,7 @@
         }
 
         function openPreview(feed, trigger) {
+            var token = ++previewToken;
             currentFeedUrl = feed.url;
             lastTrigger = trigger || null;
             $panelTitle.text(feed.title || feed.url);
@@ -122,11 +139,17 @@
                 data: {url: feed.url},
                 dataType: 'json'
             }).done(function (data) {
+                if (token !== previewToken) {
+                    return;
+                }
                 if (data && data.title && !feed.title) {
                     $panelTitle.text(data.title);
                 }
                 renderPreview(data);
             }).fail(function (xhr) {
+                if (token !== previewToken) {
+                    return;
+                }
                 var message = 'Could not load this feed.';
                 try {
                     message = JSON.parse(xhr.responseText).error || message;
@@ -139,6 +162,7 @@
         }
 
         function closePreview() {
+            previewToken++;
             $panel.removeClass('is-open').attr('aria-hidden', 'true');
             $overlay.removeClass('is-open').attr('aria-hidden', 'true');
             $('body').removeClass('feed-preview-open');
@@ -262,8 +286,30 @@
         });
 
         $(document).on('keydown', function (event) {
-            if (event.key === 'Escape' && $panel.hasClass('is-open')) {
+            if (!$panel.hasClass('is-open')) {
+                return;
+            }
+            if (event.key === 'Escape') {
                 closePreview();
+                return;
+            }
+            if (event.key !== 'Tab') {
+                return;
+            }
+            // The panel is aria-modal, so focus has to stay inside it.
+            var focusable = $panel.find('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
+                .filter(':visible');
+            if (!focusable.length) {
+                return;
+            }
+            var first = focusable.get(0);
+            var last = focusable.get(focusable.length - 1);
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
             }
         });
 
