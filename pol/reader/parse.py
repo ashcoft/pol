@@ -251,8 +251,11 @@ def _unescape_basic(text):
     # Only entities that end with ';', and only names that exist in full: Python's decoder
     # accepts a known prefix, so `&copyright;` would otherwise become `©right;`.
     def decode(match):
-        value = html5.get(match.group(0)[1:])
-        return value if value is not None else match.group(0)
+        entity = match.group(0)
+        if entity.startswith('&#'):
+            return html_unescape(entity)
+        value = html5.get(entity[1:])
+        return value if value is not None else entity
 
     return _BASIC_ENTITY_RE.sub(decode, text)
 

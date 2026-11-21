@@ -392,3 +392,7 @@ def test_html_to_text_decodes_named_entities_that_end_with_a_semicolon():
 
 def test_html_to_text_leaves_unknown_entity_names_alone():
     assert html_to_text('&copyright; 2026') == '&copyright; 2026'
+
+
+def test_html_to_text_decodes_numeric_references():
+    assert html_to_text("it&#x27;s &amp; fine") == "it's & fine"
