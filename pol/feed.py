@@ -5,9 +5,12 @@ import six
 from lxml import etree
 from lxml import html as lxml_html
 import hashlib
+import html
+import mimetypes
 import re, sys
 from hashlib import md5
 
+from dateutil import parser as date_parser
 from feedgenerator import Rss201rev2Feed, Enclosure
 import datetime
 
@@ -63,13 +66,47 @@ def _normalize_images(fragment, base_url):
         etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
+def _parse_date(value):
+    """Parse a human-readable date from a page into an aware datetime."""
+    if not value:
+        return None
+    text = re.sub(r'<[^>]+>', ' ', value)
+    # dateutil fills missing parts from its default, which would give an
+    # unchanged article a new date on every refresh. Parse with two different
+    # defaults and only accept values whose day, month and year are explicit.
+    try:
+        first = date_parser.parse(text, fuzzy=True, default=datetime.datetime(2000, 1, 1))
+        second = date_parser.parse(text, fuzzy=True, default=datetime.datetime(2001, 2, 2))
+    except (ValueError, OverflowError, TypeError):
+        return None
+    if (first.year, first.month, first.day) != (second.year, second.month, second.day):
+        return None
+    if first.tzinfo is None:
+        first = first.replace(tzinfo=datetime.timezone.utc)
+    return first
+
+
+def _as_utc(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=datetime.timezone.utc)
+    return value.astimezone(datetime.timezone.utc)
+
+
+def _image_mime(url):
+    path = six.moves.urllib.parse.urlsplit(url).path
+    mime, _ = mimetypes.guess_type(path)
+    return mime if mime and mime.startswith('image/') else 'image/jpeg'
+
+
 class Feed(object):
 
     url_hash_regexp = re.compile('(#.*)?$')
 
     POST_TIME_DISTANCE = 15 # minutes, RSS Feed Reader skip same titles created in 10 min interval
 
-    FIELD_IDS = {'title': 1, 'description': 2, 'link': 3}
+    FIELD_IDS = {'title': 1, 'description': 2, 'link': 3, 'date': 4, 'image': 5}
 
     def __init__(self, db_creds):
         self.db_creds = db_creds
@@ -126,6 +163,33 @@ class Feed(object):
                     cur_time -= datetime.timedelta(minutes=self.POST_TIME_DISTANCE)
         return new_post_cnt
 
+    IMAGE_ATTRIBUTES = ('data-src', 'data-original', 'data-lazy-src', 'src')
+
+    def _extract_image(self, node, xpath):
+        matches = node.xpath(xpath)
+        if not matches:
+            return None
+        # Prefer lazy-loading attributes: src is often a placeholder.
+        for attr in self.IMAGE_ATTRIBUTES:
+            for value in matches.xpath('@' + attr).extract():
+                if self._usable_image(value):
+                    return value
+        for value in matches.extract():
+            if self._usable_image(value):
+                return value
+        return None
+
+    @staticmethod
+    def _usable_image(value):
+        value = (value or '').strip()
+        if not value or '<' in value or value.lower().startswith('data:'):
+            return False
+        try:
+            scheme = six.moves.urllib.parse.urlsplit(value).scheme.lower()
+        except ValueError:
+            return False
+        return scheme in ('', 'http', 'https')
+
     def _build_link(self, html, doc_url, url):
         base_url = w3lib.html.get_base_url(html, doc_url)
         return six.moves.urllib.parse.urljoin(base_url, url)
@@ -141,18 +205,26 @@ class Feed(object):
             item = {}
             required_count = 0
             required_found = 0
-            for field_name in ['title', 'description', 'link']:
-                if field_name in feed_config['fields']:
-                    if feed_config['required'][field_name]:
-                        required_count += 1
+            for field_name in ['title', 'description', 'link', 'date', 'image']:
+                if field_name not in feed_config['fields']:
+                    continue
 
+                required = feed_config['required'][field_name]
+                if required:
+                    required_count += 1
+
+                if field_name == 'image':
+                    value = self._extract_image(node, feed_config['fields']['image'])
+                else:
                     extracted = node.xpath(feed_config['fields'][field_name]).extract()
-                    if extracted:
-                        item[field_name] = u''.join(extracted)
-                        if feed_config['required'][field_name]:
-                            required_found += 1
-                        if field_name == 'link':
-                            item['link'] = self._build_link(page_unicode, feed_config['uri'], item[field_name])
+                    value = u''.join(extracted) if extracted else None
+                    if field_name == 'link' and value:
+                        value = self._build_link(page_unicode, feed_config['uri'], value)
+
+                if value:
+                    item[field_name] = value
+                    if required:
+                        required_found += 1
 
             if required_count == required_found:
                 items.append(item)
@@ -176,18 +248,28 @@ class Feed(object):
             title = re.sub(r'<[^>]+>', '', title).strip()
             desc = item['description'] if 'description' in item else ''
             desc = _normalize_images(desc, base_url)
-            time = item['time'] if 'time' in item else datetime.datetime.utcnow()
+            image = item.get('image')
+            if image:
+                image = self._build_link(page_unicode, feed_config['uri'], image)
+                if image not in desc:
+                    desc = '<img src="%s" alt="" />' % html.escape(image) + desc
+            time = (_parse_date(item.get('date')) or _as_utc(item.get('time'))
+                    or datetime.datetime.now(datetime.timezone.utc))
             if 'link' in item:
                 link = item['link']
             else:
-                # md5 is the published identity of link-less items; keep it stable.
-                fragment = md5((title + desc).encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
+                # md5 keeps published identities of link-less items stable.
+                identity = title + desc
+                if not identity:
+                    identity = (item.get('date') or '') + (item.get('image') or '')
+                fragment = md5(identity.encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
                 link = self.url_hash_regexp.sub('#' + fragment, feed_config['uri'])
             feed.add_item(
                 title = title,
                 link = link,
                 unique_id = link,
                 description = desc,
+                enclosures=[Enclosure(image, '0', _image_mime(image))] if image else (),
                 #enclosure=Enclosure(fields[4], "32000", "image/jpeg") if  4 in fields else None, #"Image"
                 pubdate = time
             )
