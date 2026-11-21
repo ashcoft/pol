@@ -1,6 +1,3 @@
-/* eslint-disable no-unsanitized/method, security/detect-object-injection --
-   feed HTML is parsed by DOMParser and sanitised below; attributes are read
-   from a live NamedNodeMap rather than from a user-controlled object key. */
 (function ($) {
     'use strict';
 
@@ -82,27 +79,6 @@
             return isNaN(date.getTime()) ? value : date.toLocaleString();
         }
 
-        function sanitizeSummary(html) {
-            var doc = new DOMParser().parseFromString('<div>' + (html || '') + '</div>', 'text/html');
-            var wrapper = doc.body.firstChild || document.createElement('div');
-            $(wrapper).find('script, style, iframe, object, embed, form, input, button, svg, canvas').remove();
-            $(wrapper).find('*').addBack().each(function () {
-                var attributes = this.attributes;
-                if (!attributes) {
-                    return;
-                }
-                for (var i = attributes.length - 1; i >= 0; i--) {
-                    var name = attributes[i].name.toLowerCase();
-                    var value = attributes[i].value || '';
-                    var unsafeLink = (name === 'href' || name === 'src') && !safeUrl(value);
-                    if (name.indexOf('on') === 0 || name === 'srcdoc' || unsafeLink) {
-                        this.removeAttribute(attributes[i].name);
-                    }
-                }
-            });
-            return wrapper;
-        }
-
         function renderPreview(data) {
             $panelBody.empty();
             var items = (data && data.items) || [];
@@ -141,10 +117,9 @@
                     }).appendTo($article);
                 }
 
-                if (item.summary) {
-                    // The server sanitises summaries; this is defence in depth.
+                if (item.summary_text || item.summary) {
                     el('div').addClass('feed-preview-summary')
-                        .append($(sanitizeSummary(item.summary)).contents())
+                        .text(item.summary_text || item.summary)
                         .appendTo($article);
                 }
 
