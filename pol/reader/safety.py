@@ -1,13 +1,13 @@
 """Reject fetches aimed at private or reserved network destinations.
 
-Mirrors the guard added to ashcoft/rss-finder: literal private addresses and local
-hostnames are refused before a request is made, and again for the URL a redirect ends on.
-Hostnames that *resolve* to a private address still need a resolver-level check.
+Mirrors the guard added to ashcoft/rss-finder, plus a resolver check: Python can see the
+addresses a hostname resolves to, so a name pointing at a private address is refused too.
 """
 
 from __future__ import annotations
 
 import ipaddress
+import socket
 from urllib.parse import urlsplit
 
 from .errors import InvalidURLError
@@ -37,11 +37,36 @@ def is_blocked_host(hostname: str) -> bool:
     return not address.is_global or address.is_multicast or address.is_reserved
 
 
-def assert_public_url(url: str) -> str:
-    """Return ``url`` unchanged, or raise InvalidURLError when it targets a private host."""
+def resolve_addresses(hostname: str):
+    """Every address a hostname resolves to, as strings."""
+    infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    return sorted({info[4][0] for info in infos})
+
+
+def assert_public_url(url: str, resolver=resolve_addresses) -> str:
+    """Return ``url`` unchanged, or raise InvalidURLError when it targets a private host.
+
+    The hostname is resolved and every address it points at is checked, so a public name
+    that resolves to a private address is refused as well. The connection itself is still
+    made by the transport, so a name that changes its answer between the check and the
+    connect (DNS rebinding) is not covered.
+    """
     parts = urlsplit(url)
     if parts.scheme.lower() not in ('http', 'https'):
         raise InvalidURLError('URL must use http or https')
-    if is_blocked_host(parts.hostname or ''):
+
+    host = parts.hostname or ''
+    if is_blocked_host(host):
+        raise InvalidURLError('URL host is not allowed')
+
+    if resolver is None:
+        return url
+
+    try:
+        addresses = resolver(host)
+    except (socket.gaierror, OSError) as exc:
+        raise InvalidURLError('URL host could not be resolved') from exc
+
+    if any(is_blocked_host(address) for address in addresses):
         raise InvalidURLError('URL host is not allowed')
     return url

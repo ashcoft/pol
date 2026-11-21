@@ -93,12 +93,6 @@ def _enclosures(element):
         medium = _attr(child, 'medium').lower()
         if name == 'link' and (_attr(child, 'rel') or '').lower() != 'enclosure':
             return
-        if medium and medium != 'image' and not kind.lower().startswith('image/'):
-            return
-        if name in ('content', 'thumbnail') and medium != 'image' \
-                and kind.lower() not in _INCONCLUSIVE_TYPES \
-                and not kind.lower().startswith('image/'):
-            return
         entry = {'url': url, 'type': kind or 'application/octet-stream',
                  'length': _attr(child, 'length'), 'medium': medium}
         if entry not in found:

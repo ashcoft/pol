@@ -9,7 +9,7 @@ from lxml import html as lxml_html
 
 from .cache import HttpCache, make_cache
 from .discover import FeedRef, common_candidates, discover_from_html, find_feeds
-from .errors import FetchError, ParseError
+from .errors import FetchError, InvalidURLError, ParseError
 from .http import DEFAULT_MAX_SIZE, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, Fetcher
 from .jsonfeeds import Rules, parse_custom, rules_for_url
 from .model import Feed
@@ -123,7 +123,7 @@ def _feed_from_page(response, fetcher, options):
             if not candidate.ok:
                 continue
             return parse_feed(candidate.body, candidate.url, candidate.content_type)
-        except (FetchError, ParseError):
+        except (FetchError, InvalidURLError, ParseError):
             continue
     raise ParseError('No feed found at %s' % response.url)
 
@@ -153,7 +153,7 @@ def _fill_fulltext(feed, fetcher, options):
             continue
         try:
             response = fetcher.fetch(item.link, force=options.force, allow_meta=False)
-        except FetchError:
+        except (FetchError, InvalidURLError):
             continue
         if not response.ok or not response.is_html:
             continue

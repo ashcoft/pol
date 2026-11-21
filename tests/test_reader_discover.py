@@ -97,3 +97,35 @@ def test_find_feeds_with_injected_fetcher(http_server):
     fetcher = Fetcher(timeout=5)
     refs = find_feeds(http_server.base_url + '/', fetcher=fetcher, verify=False)
     assert refs  # common candidates, unverified
+
+
+def test_a_private_candidate_does_not_abort_discovery(monkeypatch):
+    from pol.reader import discover as discover_module
+    from pol.reader.errors import InvalidURLError
+    from pol.reader.http import Response
+
+    class _Fetcher:
+        def fetch(self, url, **kwargs):
+            if 'private' in url:
+                raise InvalidURLError('URL host is not allowed')
+            body = RSS_FEED.encode('utf-8')
+            return Response(url=url, status=200,
+                            headers={'content-type': 'application/rss+xml'}, body=body)
+
+    page = ('<html><head>'
+            '<link rel="alternate" type="application/rss+xml" href="/private.xml">'
+            '<link rel="alternate" type="application/rss+xml" href="/feed.xml">'
+            '</head></html>')
+
+    class _PageFetcher(_Fetcher):
+        def fetch(self, url, **kwargs):
+            if url.endswith('/page'):
+                return Response(url=url, status=200,
+                                headers={'content-type': 'text/html'},
+                                body=page.encode('utf-8'))
+            return super().fetch(url, **kwargs)
+
+    urls = [feed.url for feed in discover_module.find_feeds('https://example.com/page',
+                                                             fetcher=_PageFetcher())]
+    assert 'https://example.com/feed.xml' in urls
+    assert 'https://example.com/private.xml' not in urls

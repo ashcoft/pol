@@ -236,3 +236,17 @@ def test_inline_image_skips_data_uri():
     item = _item_with_description(
         '<img src="data:image/gif;base64,R0lGOD"><img src="/real.png">')
     assert item.images == ['https://example.com/real.png']
+
+
+def test_video_enclosure_is_kept_but_not_used_as_an_image():
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel><title>T</title><link>https://example.com/</link>
+    <item><title>A</title><link>https://example.com/a</link>
+      <media:content url="https://example.com/clip.mp4" type="video/mp4"/>
+    </item>
+  </channel>
+</rss>"""
+    item = parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml').items[0]
+    assert [enclosure['url'] for enclosure in item.enclosures] == ['https://example.com/clip.mp4']
+    assert item.images == []

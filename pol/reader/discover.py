@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from lxml import html as lxml_html
 
-from .errors import FetchError, ParseError
+from .errors import FetchError, InvalidURLError, ParseError
 from .http import Fetcher
 from .parse import parse_feed
 from .urls import clean_url, looks_like_feed_url, normalize_url
@@ -130,7 +130,7 @@ def _verify(refs, fetcher, limit):
             if not response.ok:
                 continue
             feed = parse_feed(response.body, response.url, response.content_type)
-        except (FetchError, ParseError):
+        except (FetchError, InvalidURLError, ParseError):
             continue
         if not feed.items and not feed.title:
             continue

@@ -78,14 +78,22 @@ class Response:
                 or head.startswith(b'{"version"'))
 
 
+class GuardedRedirectHandler(urllib_request.HTTPRedirectHandler):
+    """Rejects a redirect hop that points at a private or local destination."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        assert_public_url(urljoin(req.full_url, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class UrllibTransport:
     """Default transport. Returns (status, headers, body, final_url)."""
 
     def __init__(self, timeout=DEFAULT_TIMEOUT, max_size=DEFAULT_MAX_SIZE,
-                 verify_ssl=True):
+                 verify_ssl=True, block_private_hosts=False):
         self.timeout = timeout
         self.max_size = max_size
-        handlers = []
+        handlers = [GuardedRedirectHandler()] if block_private_hosts else []
         if not verify_ssl:
             context = ssl.create_default_context()
             context.check_hostname = False
@@ -130,13 +138,14 @@ class Fetcher:
         self.timeout = timeout
         self.max_size = max_size
         self.cache = cache
-        self.transport = transport or UrllibTransport(
-            timeout=timeout, max_size=max_size, verify_ssl=verify_ssl)
-        self.allow_meta_refresh = allow_meta_refresh
-        self.cache_only = cache_only
         self.block_private_hosts = (DEFAULT_BLOCK_PRIVATE_HOSTS
                                     if block_private_hosts is None
                                     else block_private_hosts)
+        self.transport = transport or UrllibTransport(
+            timeout=timeout, max_size=max_size, verify_ssl=verify_ssl,
+            block_private_hosts=self.block_private_hosts)
+        self.allow_meta_refresh = allow_meta_refresh
+        self.cache_only = cache_only
 
     def fetch(self, url, headers=None, data=None, method='GET', force=False,
               allow_meta=True, _depth=0):
@@ -193,6 +202,8 @@ class Fetcher:
     def resolve(self, url):
         """Follow redirects and return the final URL without keeping the body."""
         url = clean_url(normalize_url(url))
+        if self.block_private_hosts:
+            assert_public_url(url)
         headers = {'User-Agent': self.user_agent, 'Accept': '*/*'}
         for method in ('HEAD', 'GET'):
             try:

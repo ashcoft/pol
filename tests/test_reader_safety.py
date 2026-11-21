@@ -56,3 +56,38 @@ def test_guarded_fetcher_refuses_a_redirect_to_a_private_host(http_server):
 def test_reader_endpoints_guard_private_hosts_by_default():
     endpoints = ReaderEndpoints('pol-test/1', cache_backend='memory')
     assert endpoints.block_private_hosts is True
+
+
+def test_hostname_resolving_to_a_private_address_is_rejected():
+    with pytest.raises(InvalidURLError):
+        assert_public_url('http://internal.example.com/feed.xml',
+                          resolver=lambda host: ['10.0.0.5'])
+
+
+def test_hostname_with_one_private_answer_is_rejected():
+    with pytest.raises(InvalidURLError):
+        assert_public_url('http://mixed.example.com/feed.xml',
+                          resolver=lambda host: ['93.184.216.34', '127.0.0.1'])
+
+
+def test_hostname_with_only_public_answers_is_allowed():
+    url = 'http://public.example.com/feed.xml'
+    assert assert_public_url(url, resolver=lambda host: ['93.184.216.34']) == url
+
+
+def test_redirect_handler_refuses_a_private_hop():
+    from pol.reader.http import GuardedRedirectHandler
+
+    class _Request:
+        full_url = 'https://example.com/feed.xml'
+
+    handler = GuardedRedirectHandler()
+    with pytest.raises(InvalidURLError):
+        handler.redirect_request(_Request(), None, 302, 'Found', {},
+                                 'http://169.254.169.254/latest/meta-data/')
+
+
+def test_guarded_fetcher_refuses_to_resolve_private_links(http_server):
+    fetcher = Fetcher(timeout=2, block_private_hosts=True)
+    with pytest.raises(InvalidURLError):
+        fetcher.resolve('http://169.254.169.254/latest/meta-data/')
