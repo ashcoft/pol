@@ -12,6 +12,8 @@ services:
       DB_PORT: '3306'
       WEB_PORT: '8088'
       TIME_ZONE: 'America\/Fortaleza'
+      # Hostname/IP you use to reach the app, e.g. 192.168.0.10
+      ALLOWED_HOSTS: '${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}'
     image: politepol:latest
     depends_on:
       - 'dbpolitepol'

@@ -29,7 +29,10 @@ def index(request):
             except ValidationError:
                 form.add_error('url', 'Invalid url')
             else:
-                return HttpResponseRedirect('%s?url=%s' % (reverse('setup'), urllib.parse.quote(url.encode('utf8'))))
+                # The redirect target is always this site's setup page; the
+                # user-supplied URL only becomes an encoded query parameter.
+                return HttpResponseRedirect(
+                    reverse('setup') + '?' + urllib.parse.urlencode({'url': url}))
     else:
         form = IndexForm()
 

@@ -97,6 +97,8 @@ sudo service nginx reload
 
 The template proxies `/` to the Django dev server (port 8000) and `/downloader`, `/feed`, `/feed1` to the downloader server(port 1234). In Docker, `frontend/start.sh` patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose file exposes.
 
+The template forwards the browser `Host` header so Django's CSRF checks pass behind the proxy. If you reach the app by anything other than `localhost`/`127.0.0.1`, export `ALLOWED_HOSTS` (comma separated) with that name or IP before starting Django.
+
 ## Docker
 
 ```bash
@@ -112,11 +114,16 @@ The stack starts two services:
 
 `wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and the Django server.
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`.
+Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`.
 
 ### Access (port 8088)
 
-Open the Docker host IP in a browser, e.g.:
+`ALLOWED_HOSTS` defaults to loopback, so set it to the hostname or IP you use
+to reach the app (comma separated), then open it in a browser, e.g.:
+
+```bash
+ALLOWED_HOSTS=192.168.0.10 docker compose up -d
+```
 
 ```
 http://localhost:8088

@@ -26,7 +26,12 @@ SECRET_KEY = 'e2e%g-cu_f9=#^5=(8et$@(y+wu+dflyi2h)nim#r0-m=kqd^@'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Hosts allowed to serve the app. Loopback only by default; set ALLOWED_HOSTS
+# to a comma-separated list of the names or IPs you actually use (for example
+# "192.168.0.10" or "feeds.example.com") when serving on another address.
+ALLOWED_HOSTS = [host.strip() for host in
+                 os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1]').split(',')
+                 if host.strip()]
 
 
 # Application definition
@@ -43,17 +48,18 @@ INSTALLED_APPS = (
     'frontend',
 )
 
-MIDDLEWARE_CLASSES = (
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.middleware.locale.LocaleMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.auth.middleware.SessionAuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
-)
+]
+
+SITE_ID = 1
 
 ROOT_URLCONF = 'frontend.urls'
 
@@ -124,7 +130,6 @@ STATICFILES_DIRS = (
 
 STATIC_ROOT = os.path.join(PROJECT_DIR, 'static/')
 
-STATICFILES_STORAGE = 'pipeline.storage.PipelineCachedStorage'
 
 STATICFILES_FINDERS = (
     'django.contrib.staticfiles.finders.FileSystemFinder',
@@ -132,42 +137,41 @@ STATICFILES_FINDERS = (
     'pipeline.finders.PipelineFinder',
 )
 
-PIPELINE_COMPILERS = (
-    'pipeline.compilers.less.LessCompiler',
-    'pipeline.compilers.sass.SASSCompiler',
-)
-
-PIPELINE_CSS = {
-    'app': {
-        'source_filenames': (
-          'frontend/stylesheets/application.css',
-          'frontend/stylesheets/bootstrap_and_overrides.css.less',
-          'frontend/stylesheets/wizard.css.scss',
-          'frontend/stylesheets/google-code-prettify/prettify.css',
-        ),
-        'output_filename': 'frontend/stylesheets/app.css',
-        'extra_context': {
-            'media': 'all',
+PIPELINE = {
+    'COMPILERS': [],
+    'CSS_COMPRESSOR': None,
+    'JS_COMPRESSOR': None,
+    'STYLESHEETS': {
+        'app': {
+            'source_filenames': (
+              'frontend/stylesheets/application.css',
+              'frontend/stylesheets/bootstrap_and_overrides.css.css',
+              'frontend/stylesheets/wizard.css.css',
+              'frontend/stylesheets/google-code-prettify/prettify.css',
+            ),
+            'output_filename': 'frontend/stylesheets/app.css',
+            'extra_context': {
+                'media': 'all',
+            },
         },
     },
-}
-
-PIPELINE_JS = {
-    'app': {
-        'source_filenames': (
-          'frontend/js/jquery.js',
-          'frontend/js/jquery.browser.js',
-          'frontend/js/jquery.jfeed.js',
-          'frontend/js/bootstrap.js',
-          'frontend/js/bootstrap_and_overrides.js',
-          'frontend/js/xregexp-all.js',
-          'frontend/js/google-code-prettify/prettify.js',
-          'frontend/js/setup-tool.js',
-          'frontend/js/setup-tool-ext.js',
-          'frontend/js/help.js',
-        ),
-        'output_filename': 'frontend/js/app.js',
-    }
+    'JAVASCRIPT': {
+        'app': {
+            'source_filenames': (
+              'frontend/js/jquery.js',
+              'frontend/js/jquery.browser.js',
+              'frontend/js/jquery.jfeed.js',
+              'frontend/js/bootstrap.js',
+              'frontend/js/bootstrap_and_overrides.js',
+              'frontend/js/xregexp-all.js',
+              'frontend/js/google-code-prettify/prettify.js',
+              'frontend/js/setup-tool.js',
+              'frontend/js/setup-tool-ext.js',
+              'frontend/js/help.js',
+            ),
+            'output_filename': 'frontend/js/app.js',
+        },
+    },
 }
 
 DOWNLOADER_PAGE_URL = '/downloader?url='
