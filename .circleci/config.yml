@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   python-tests:
     docker:
-      - image: cimg/python:3.13
+      - image: cimg/python:3.15
     steps:
       - checkout
       - run:
