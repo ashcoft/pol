@@ -31,3 +31,4 @@ urlpatterns.append(url(r'^setup_get_selected_ids$', views.setup_get_selected_ids
 urlpatterns.append(url(r'^setup_create_feed$', views.setup_create_feed, name='setup_create_feed'))
 urlpatterns.append(url(r'^setup_create_feed_ext$', views.setup_create_feed_ext, name='setup_create_feed_ext'))
 urlpatterns.append(url(r'^setup_validate_selectors$', views.setup_validate_selectors, name='setup_validate_selectors'))
+urlpatterns.append(url(r'^discover$', views.discover, name='discover'))

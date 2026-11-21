@@ -7,6 +7,21 @@ name = "pol"
 version = "1.1.1"
 description = "RSS generator website"
 requires-python = ">=3.12"
+dependencies = [
+    "lxml>=4.9",
+    "python-dateutil>=2.8",
+    "brotli>=1.0",
+]
+
+[project.optional-dependencies]
+reader = ["redis>=5.0", "charset-normalizer>=3.3"]
+
+[project.scripts]
+morss = "pol.reader.cli:main"
+pol-feed = "pol.reader.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pol*"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
