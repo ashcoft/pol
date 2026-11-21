@@ -32,6 +32,7 @@ from scrapy.selector import Selector
 from pol.log import LogHandler
 from .feed import Feed
 from .client import ppReadBody, IGNORE_SIZE
+from .reader.web import ReaderEndpoints
 
 from twisted.logger import Logger
 
@@ -424,12 +425,13 @@ class Site(resource.Resource):
     feed_regexp = re.compile(rb'^/feed/(\d{1,10})')
 
 
-    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE):
+    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
         self.user_agent = user_agent
         self.limiter = limiter
         self.prefetch_dir = prefetch_dir
+        self.reader = reader if reader is not None else ReaderEndpoints(user_agent)
 
         self.feed = feed or Feed(db_creds)
         self.debug = debug
@@ -513,6 +515,8 @@ class Site(resource.Resource):
         '''
         Render page for frontend or RSS feed
         '''
+        if self.reader and self.reader.handles(request.path):
+            return self.reader.get(request)
         if b'url' in request.args: # page for frontend
             url = request.args[b'url'][0]
 
@@ -540,10 +544,21 @@ class Site(resource.Resource):
         else: # neither page and feed
             return b'Url is invalid'
 
+    def render_POST(self, request):
+        if self.reader and self.reader.handles(request.path):
+            return self.reader.post(request)
+        request.setResponseCode(405)
+        return b'Method not allowed'
+
+    def render_OPTIONS(self, request):
+        if self.reader and self.reader.handles(request.path):
+            return self.reader.options(request)
+        request.setResponseCode(405)
+        return b'Method not allowed'
 
 class Server(object):
 
-    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE):
+    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
         self.port = port
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
@@ -559,7 +574,7 @@ class Server(object):
         if not sitecls:
             sitecls = Site
 
-        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size)
+        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size, reader=reader)
 
     def requestSelector(self, url=None, feed_config=None):
         d = defer.Deferred()

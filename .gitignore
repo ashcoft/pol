@@ -1,5 +1,6 @@
 frontend/frontend/settings.py
 *.pyc
+*.egg-info/
 frontend/frontend/static
 .*
 !.github

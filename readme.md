@@ -10,14 +10,96 @@ Source code of an RSS feed generator website with a user friendly interface: ent
 
 ```
 pol/                       downloader core (Twisted-based HTTP server, feed builder, client, db helpers, log, GC monitor)
+pol/reader/                feed reader: discovery, parsing, full text, caches, output formats, CLI
 frontend/                  Django app (models, views, templates, forms, migrations, fixtures, settings.py.example)
 frontend/frontend/assets/ static assets (LESS/SASS, CSS, JS, images)
-nginx/                     nginx site template (proxies / to Django and /downloader, /feed, /feed1 to the downloader server)
+nginx/                     nginx site template (proxies / to Django and /downloader, /feed, /feed1, /read, /discover, /api to the downloader server)
 tests/                     pytest test suite
 .github/workflows/        CI, release (semantic-release), Snyk security, Pullfrog
 requirements.txt           Python dependencies (root-level)
 Dockerfile, docker-compose.yaml, wait-for-it.sh, downloader.py
 ```
+
+## Feed reader features
+
+Besides scraping a page into a new feed, pol can read, enrich and re-export
+existing feeds:
+
+* Read RSS 0.9x/2.0, Atom 0.3/1.0, RDF (RSS 1.0) and JSON Feed 1.0/1.1.
+* Discover feeds on a page, ported from [ashcoft/rss-finder](https://github.com/ashcoft/rss-finder):
+  `<link rel="alternate">`, feed-looking anchors, well-known paths, then every
+  candidate is verified by parsing it.
+* Fetch the full article text for feed items (readability-style extraction,
+  or a manual XPath).
+* Build feeds from JSON, HTML or XML documents with hand-written rules.
+* Export as RSS 2.0, JSON Feed, CSV, HTML or JSONP.
+* HTTP caching with memory, redis or diskcache backends and
+  `ETag`/`Last-Modified` revalidation.
+* Replace tracking links with direct links, including known redirect wrappers
+  (`l.facebook.com`, `google.com/url`, `out.reddit.com`, ...).
+* Recover broken encodings (BOM, header, XML declaration, meta charset, legacy
+  Chinese/Japanese/Korean/Cyrillic code pages).
+* Follow HTTP redirects and `<meta http-equiv="refresh">` redirects.
+* Same features from a `morss`-style command line.
+
+The index page accepts `?q=<page url>` (for example
+`/?q=https://www.cyclingnews.com`) to run discovery immediately. Each result
+has a **Preview** action that opens a slide-in pane with the latest feed items,
+plus **Copy** and **Open** actions, mirroring the rss-finder interface.
+
+## Reader HTTP API
+
+The downloader server exposes these endpoints (nginx proxies them, see
+`nginx/default.site-example`):
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /read?url=<feed>` | Read a feed, or discover one on an HTML page. |
+| `GET /read?url=<feed>&format=json\|csv\|html` | Same, in another format. |
+| `GET /read?url=<feed>&callback=cb` | JSONP output. |
+| `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). |
+| `GET /api/find-feeds?url=<page>` | Alias of `/discover`. |
+| `POST /api/find-feeds` | JSON body `{"url": "..."}`. |
+| `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
+
+`/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
+`resolve`, `search`, `xpath`, `indent`, `max_items`, `offline`, `force`,
+`no_meta`, plus the custom-feed rules `mode`, `items`, `item_title`,
+`item_link`, `item_content`, `item_desc`, `item_time`, `item_author`,
+`item_image`. Full-text fetching is off by default on HTTP and can be enabled
+with `fulltext=1`.
+
+Examples:
+
+```bash
+curl 'http://localhost:8088/read?url=https://example.com/feed.xml'
+curl 'http://localhost:8088/read?url=https://example.com/feed.xml&format=json&fulltext=1'
+curl 'http://localhost:8088/discover?url=https://example.com/'
+```
+
+## Command line
+
+```bash
+python -m pol.reader https://example.com/feed.xml --format json --indent
+python -m pol.reader https://example.com/ --discover
+python -m pol.reader https://example.com/feed.xml --fulltext --resolve --cache \
+    --cache-backend diskcache --cache-dir /var/cache/pol
+python -m pol.reader https://example.com/api \
+    --mode json --items 'data.posts[]' --item-title title \
+    --item-link url --item-content body --format rss
+```
+
+Installing the project (`pip install .`) also provides the `morss` and
+`pol-feed` console scripts.
+
+## Cache backends
+
+Set `POL_CACHE_BACKEND` (or `CACHE_BACKEND` in `settings.py`) to `memory`
+(default), `diskcache`, `redis` or `none`. The `diskcache` backend is a built-in
+JSON-backed disk cache; `POL_CACHE_DIR` selects its directory. `POL_REDIS_URL`
+selects the redis server. The reader uses conditional requests
+(`If-None-Match` / `If-Modified-Since`) and falls back to the memory backend
+when Redis is unavailable.
 
 ## Requirements
 
@@ -114,7 +196,7 @@ The stack starts two services:
 
 `wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and the Django server.
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`.
+Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`, `POL_CACHE_BACKEND`, `POL_CACHE_DIR`, `POL_REDIS_URL`, `POL_READER_TIMEOUT`, `POL_READER_MAX_SIZE`, `POL_READER_VERIFY_SSL`.
 
 ### Access (port 8088)
 

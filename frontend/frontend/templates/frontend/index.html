@@ -35,7 +35,34 @@
             </div>
         </div>
     </form>
+
+    <div class="feed-finder">
+        <h3>{% trans "Find RSS feeds" %}</h3>
+        <p class="muted">{% trans "Enter a page URL above, then look for feeds it already publishes." %}</p>
+        <button type="button" id="find-feeds-btn" class="btn" aria-controls="feed-finder-results">{% trans "Find feeds" %}</button>
+        <div id="feed-finder-status" class="muted" style="margin-top: .5rem" role="status" aria-live="polite"></div>
+        <ul id="feed-finder-results" class="unstyled" aria-live="polite"></ul>
+    </div>
 </div>
+
+<div id="feed-preview-overlay" class="feed-preview-overlay" aria-hidden="true"></div>
+<aside id="feed-preview-panel" class="feed-preview-panel" role="dialog" aria-modal="true"
+       aria-labelledby="feed-preview-heading" aria-hidden="true">
+    <header class="feed-preview-header">
+        <div class="feed-preview-heading">
+            <div class="feed-preview-kicker">{% trans "Feed preview" %}</div>
+            <h3 id="feed-preview-heading" class="feed-preview-title"></h3>
+        </div>
+        <button type="button" id="feed-preview-close" class="feed-preview-close"
+                aria-label="{% trans 'Close preview' %}">&times;</button>
+    </header>
+    <div id="feed-preview-body" class="feed-preview-body"></div>
+    <footer class="feed-preview-footer">
+        <a id="feed-preview-full" class="btn btn-mini" href="#" target="_blank" rel="noopener">{% trans "Full page" %}</a>
+        <button type="button" id="feed-preview-copy" class="btn btn-mini">{% trans "Copy feed URL" %}</button>
+    </footer>
+</aside>
+<div id="feed-finder-toast" class="feed-finder-toast" role="status" aria-live="polite"></div>
 <!-- Modal -->
 <div id="helpModal" class="modal hide fade" style="position:absolute" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
   <div class="modal-header">
