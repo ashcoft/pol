@@ -31,7 +31,8 @@ def test_index_supports_finder_deep_link_and_preview_pane():
     response = Client().get('/en/', {'q': 'https://example.com'})
     assert response.status_code == 200
     html = response.content.decode('utf-8')
-    assert 'find-feeds-btn' in html
+    assert 'rss-search-form' in html
+    assert 'rss-finder-title' in html
     assert 'feed-preview-panel' in html
     assert 'feed-preview-overlay' in html
     assert 'feed-preview-body' in html
@@ -79,3 +80,11 @@ def test_discover_reports_downloader_failure(http_server, monkeypatch):
     response = Client().get('/discover', {'url': 'https://example.com/'})
     assert response.status_code == 502
     assert json.loads(response.content)['error'] == 'upstream'
+
+
+@override_settings(**TEST_SETTINGS)
+def test_contact_links_to_github_and_has_no_email():
+    response = Client().get('/en/contact')
+    assert response.status_code == 200
+    assert b'github.com/ashcoft' in response.content
+    assert b'politepol.com@gmail.com' not in response.content

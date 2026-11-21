@@ -272,6 +272,55 @@ def html_to_text(fragment):
     return re.sub(r'\s+', ' ', root.text_content()).strip()
 
 
+def _usable_image_url(value):
+    value = (value or '').strip()
+    return value.lower().startswith(('http://', 'https://'))
+
+
+def page_image(html_text, base_url=''):
+    """Lead image for an article page, preferring social-card metadata."""
+    if not html_text:
+        return ''
+    try:
+        document = lxml_html.document_fromstring(html_text)
+    except (ValueError, TypeError):
+        return ''
+
+    for meta in document.xpath('//meta'):
+        key = (meta.get('property') or meta.get('name') or '').strip().lower()
+        if key in ('og:image', 'og:image:url', 'og:image:secure_url',
+                   'twitter:image', 'twitter:image:src'):
+            value = urljoin(base_url, (meta.get('content') or '').strip())
+            if _usable_image_url(value):
+                return value
+
+    for link in document.xpath('//link[@rel]'):
+        if 'image_src' in (link.get('rel') or '').lower():
+            value = urljoin(base_url, (link.get('href') or '').strip())
+            if _usable_image_url(value):
+                return value
+
+    for img in document.xpath('//img[@src]'):
+        src = (img.get('src') or '').strip()
+        if not src or src.lower().startswith(('data:', 'javascript:')):
+            continue
+        value = urljoin(base_url, src)
+        if not _usable_image_url(value) or value.lower().endswith('.svg'):
+            continue
+        try:
+            width = int(img.get('width') or 0)
+            height = int(img.get('height') or 0)
+        except (TypeError, ValueError):
+            width = height = 0
+        if width and height and (width < 200 or height < 120):
+            continue
+        signature = ' '.join((value, img.get('class') or '', img.get('alt') or '')).lower()
+        if any(hint in signature for hint in ('logo', 'icon', 'avatar', 'sprite')):
+            continue
+        return value
+    return ''
+
+
 def _is_image_enclosure(enclosure):
     if enclosure.get('thumbnail') or (enclosure.get('medium') or '') == 'image':
         return True

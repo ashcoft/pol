@@ -190,3 +190,20 @@ def test_request_cannot_enable_private_fetching():
     options = Options(format='rss', allow_private=True)
 
     assert _effective_allow_private(endpoints, options) is False
+
+
+def test_feed_preview_enriches_missing_images(reader_server, http_server):
+    base = http_server.base_url
+    feed = f"""<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel><title>No images</title><link>{base}/</link>
+    <description>d</description><item><title>A</title><link>{base}/article</link>
+    <description>Short</description></item></channel></rss>"""
+    http_server.routes['/noimg.xml'] = (200, {'Content-Type': 'application/rss+xml'}, feed)
+    http_server.routes['/article'] = (
+        200, {'Content-Type': 'text/html'},
+        '<html><head><meta property="og:image" content="/hero.jpg"></head>'
+        '<body><p>Article</p></body></html>')
+
+    response = _get(reader_server + '/api/feed-preview', url=base + '/noimg.xml')
+    payload = json.loads(response.read().decode('utf-8'))
+    assert payload['items'][0]['image'] == base + '/hero.jpg'

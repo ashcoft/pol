@@ -7,6 +7,7 @@ from pol.reader.parse import (
     absolutize,
     html_to_text,
     parse_date,
+    page_image,
     parse_feed,
     sanitize_html,
 )
@@ -396,3 +397,21 @@ def test_html_to_text_leaves_unknown_entity_names_alone():
 
 def test_html_to_text_decodes_numeric_references():
     assert html_to_text("it&#x27;s &amp; fine") == "it's & fine"
+
+
+def test_page_image_prefers_open_graph():
+    html = ('<html><head><meta property="og:image" content="/hero.jpg"></head>'
+            '<body><img src="/small.png"></body></html>')
+    assert page_image(html, 'https://example.com/article') == 'https://example.com/hero.jpg'
+
+
+def test_page_image_falls_back_to_large_img():
+    html = ('<html><body><img src="/logo.svg">'
+            '<img src="/hero.jpg" width="1200" height="630"></body></html>')
+    assert page_image(html, 'https://example.com/article') == 'https://example.com/hero.jpg'
+
+
+def test_page_image_ignores_data_and_svg():
+    html = ('<html><body><img src="data:image/png;base64,x">'
+            '<img src="/icon.svg"></body></html>')
+    assert page_image(html, 'https://example.com/article') == ''
