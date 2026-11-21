@@ -47,6 +47,8 @@ nginx
 
 python ./frontend/manage.py migrate --noinput
 python ./frontend/manage.py loaddata fields.json
+# Serve the static files from nginx so DEBUG=0 works as well.
+python ./frontend/manage.py collectstatic --noinput
 
 python ./downloader.py &
 downloader_pid=$!

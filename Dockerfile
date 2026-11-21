@@ -55,6 +55,8 @@ COPY . .
 # needs the site template that proxies / to Django and /feed to the downloader.
 RUN cp ./frontend/frontend/settings.py.example ./frontend/frontend/settings.py \
     && cp ./nginx/default.site-example /etc/nginx/sites-available/default \
+    && sed -i 's|location / {|location /static/ {\n                alias /app/frontend/frontend/static/;\n        }\n\n        location / {|' \
+              /etc/nginx/sites-available/default \
     && chmod +x ./frontend/start.sh \
     && mkdir -p /tmp /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi \
                 /var/lib/nginx/uwsgi /var/lib/nginx/scgi \
@@ -65,7 +67,8 @@ USER appuser
 EXPOSE 8088
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${WEB_PORT}/en/" || exit 1
+    CMD sh -c 'host="${ALLOWED_HOSTS:-127.0.0.1}"; \
+               curl -fsS -H "Host: ${host%%,*}" "http://127.0.0.1:${WEB_PORT}/en/" || exit 1'
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["./frontend/start.sh"]

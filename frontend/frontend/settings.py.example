@@ -144,6 +144,9 @@ STATICFILES_FINDERS = (
 )
 
 PIPELINE = {
+    # Sources are already compiled; render them individually so DEBUG=0
+    # works without a packing step.
+    'PIPELINE_ENABLED': False,
     'COMPILERS': [],
     'CSS_COMPRESSOR': None,
     'JS_COMPRESSOR': None,
