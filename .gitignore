@@ -2,3 +2,5 @@ frontend/frontend/settings.py
 *.pyc
 frontend/frontend/static
 .*
+!.github
+!.circleci

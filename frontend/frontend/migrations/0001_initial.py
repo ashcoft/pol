@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import django.db.models.deletion
 from django.db import migrations, models
 
 
@@ -23,7 +24,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('xpath', models.CharField(max_length=2000)),
-                ('feed', models.ForeignKey(to='frontend.Feed')),
+                ('feed', models.ForeignKey(to='frontend.Feed', on_delete=django.db.models.deletion.CASCADE)),
             ],
         ),
         migrations.CreateModel(
@@ -36,6 +37,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='feedfield',
             name='field',
-            field=models.ForeignKey(to='frontend.Field'),
+            field=models.ForeignKey(to='frontend.Field', on_delete=django.db.models.deletion.CASCADE),
         ),
     ]

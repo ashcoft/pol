@@ -3,11 +3,13 @@ from datetime import datetime
 from hashlib import sha256
 import json
 import pickle
+import zlib
 import stat
 import time, sys, traceback
 import re
 import os
 
+import brotli
 import six
 from lxml import etree
 
@@ -22,8 +24,6 @@ twisted_headers = Headers
 from twisted.logger import Logger
 
 from scrapy.http.response.text import TextResponse
-from scrapy.downloadermiddlewares.httpcompression import HttpCompressionMiddleware
-from scrapy.http.request import Request
 from scrapy.http import Headers
 from scrapy.responsetypes import responsetypes
 from scrapy.core.downloader.contextfactory import ScrapyClientContextFactory
@@ -37,6 +37,10 @@ from twisted.logger import Logger
 
 
 log = Logger()
+
+
+def _text(value):
+    return value.decode('utf-8', 'replace') if isinstance(value, bytes) else value
 
 class Downloader(object):
 
@@ -77,7 +81,7 @@ class Downloader(object):
             elif six.PY3:
                 for k, v in headers.items():
                     for vv in v:
-                        f.write('%s: %s\n' % (k, vv))
+                        f.write('%s: %s\n' % (_text(k), _text(vv)))
 
             if six.PY2:
                 f.write('\n\n' + etree.tostring(tree, encoding='utf-8', method='html'))
@@ -98,6 +102,15 @@ class Downloader(object):
                 # set tag-id attribute
                 bad.attrib['tag-id'] = str(i)
                 i += 1
+
+            # promote lazy-loaded images to a real src
+            if bad.tag == 'img':
+                lazy_src = (bad.attrib.get('data-src') or bad.attrib.get('data-original')
+                            or bad.attrib.get('data-lazy-src'))
+                src = bad.attrib.get('src', '')
+                if lazy_src and (not src or src.startswith('data:')):
+                    bad.attrib['src'] = lazy_src
+                bad.attrib.pop('loading', None)
 
             # sanitize anchors
             if sanitize_anchors and bad.tag == 'a' and 'href' in bad.attrib:
@@ -162,9 +175,12 @@ class Downloader(object):
 
     def buildScrapyResponse(self, response, body, url):
         status = response.code
-        headers = Headers({k:','.join(v) for k,v in response.headers.getAllRawHeaders()})
-        respcls = responsetypes.from_args(headers=headers, url=url)
-        return respcls(url=url, status=status, headers=headers, body=body)
+        raw_headers = {k: b','.join(v) for k, v in response.headers.getAllRawHeaders()}
+        # Content-Encoding makes Scrapy fall back to a plain Response (the body is
+        # still compressed here), so pick the class from Content-Type only.
+        sniff_headers = {k: v for k, v in raw_headers.items() if k.lower() != b'content-encoding'}
+        respcls = responsetypes.from_args(headers=sniff_headers, url=url)
+        return respcls(url=url, status=status, headers=Headers(raw_headers), body=body)
 
     def error_html(self, msg):
         return "<html><body>%s</body></html>" % msg.replace("\n", "<br/>\n")
@@ -199,18 +215,19 @@ class Downloader(object):
                         )
                 else:
                     sys.stderr.write('\n'.join(
-                        [str(datetime.utcnow()), self.request.uri, self.url, 'Downloader error: ' + error.getErrorMessage(),
-                         'Traceback: ' + error.getTraceback()]))
+                        [str(datetime.utcnow()), str(self.request.uri), str(self.url),
+                         'Downloader error: ' + str(error.getErrorMessage()),
+                         'Traceback: ' + str(error.getTraceback())]))
             except:
                 traceback.print_exc(file=sys.stdout)
 
             self.request.setResponseCode(INTERNAL_SERVER_ERROR)
             if self.debug:
-                self.request.write('Downloader error: ' + error.getErrorMessage())
-                self.request.write('Traceback: ' + error.getTraceback())
+                self.request.write(('Downloader error: ' + str(error.getErrorMessage())).encode('utf-8'))
+                self.request.write(('Traceback: ' + str(error.getTraceback())).encode('utf-8'))
             else:
                 err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or contact us by email: <a href="mailto:politepol.com@gmail.com">politepol.com@gmail.com</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
-                self.request.write(err_message)
+                self.request.write(err_message.encode('utf-8'))
 
             self.request.finish()
 
@@ -224,6 +241,8 @@ class Downloader(object):
 
     def downloadDone(self, response_str):
         url = self.response.request.absoluteURI
+        if isinstance(url, bytes):
+            url = url.decode('utf-8', 'replace')
 
         print('Response <%s> ready (%s bytes)' % (url, len(response_str)))
         sresponse = self.buildScrapyResponse(self.response, response_str, url)
@@ -235,13 +254,13 @@ class Downloader(object):
             self.run_memon()
 
     def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
-        sresponse = HttpCompressionMiddleware().process_response(Request(sresponse.url), sresponse, None)
+        sresponse = self._decompress(sresponse)
 
         response_headers = self.prepare_response_headers(sresponse.headers)
 
         if (isinstance(sresponse, TextResponse)):
             ip = self.request.getHeader('x-real-ip') or self.request.client.host
-            response_str = self.prepare_response_str(sresponse.selector, sresponse.headers, sresponse.body_as_unicode(), sresponse.url, ip)
+            response_str = self.prepare_response_str(sresponse.selector, sresponse.headers, sresponse.text, sresponse.url, ip)
             if self.feed_config:
                 response_headers = {b"Content-Type": b'text/xml; charset=utf-8'}
         else: # images and such
@@ -250,8 +269,56 @@ class Downloader(object):
         for k, v in response_headers.items():
             self.request.setHeader(k, v)
 
+        if isinstance(response_str, str):
+            response_str = response_str.encode('utf-8')
         self.request.write(response_str)
         self.request.finish()
+
+    # A small compressed body can expand to hundreds of megabytes.
+    MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
+
+    def _decompress(self, response):
+        header = response.headers.get(b'Content-Encoding', b'')
+        if isinstance(header, str):
+            header = header.encode('utf-8')
+        codings = [c.strip().lower() for c in header.split(b',') if c.strip()]
+        if not codings:
+            return response
+        body = response.body
+        # Content-Encoding lists the codings in the order they were applied.
+        for coding in reversed(codings):
+            body = self._decode_body(body, coding)
+        headers = Headers({k: v for k, v in response.headers.items()
+                           if k.lower() != b'content-encoding'})
+        kwargs = {'body': body, 'headers': headers}
+        if isinstance(response, TextResponse):
+            # Let the decoded markup declare its own charset.
+            kwargs['encoding'] = None
+        return response.replace(**kwargs)
+
+    def _decode_body(self, body, coding):
+        if coding in (b'gzip', b'x-gzip'):
+            return self._bounded_decompress(zlib.decompressobj(16 + zlib.MAX_WBITS), body)
+        if coding == b'deflate':
+            try:
+                return self._bounded_decompress(zlib.decompressobj(zlib.MAX_WBITS), body)
+            except zlib.error:
+                return self._bounded_decompress(zlib.decompressobj(-zlib.MAX_WBITS), body)
+        if coding == b'br':
+            body = brotli.decompress(body)
+            if len(body) > self.MAX_DECOMPRESSED_SIZE:
+                raise ValueError('Decompressed response is too large')
+            return body
+        return body
+
+    def _bounded_decompress(self, decompressor, body):
+        out = decompressor.decompress(body, self.MAX_DECOMPRESSED_SIZE)
+        if decompressor.unconsumed_tail:
+            raise ValueError('Decompressed response is too large')
+        out += decompressor.flush()
+        if len(out) > self.MAX_DECOMPRESSED_SIZE:
+            raise ValueError('Decompressed response is too large')
+        return out
 
     def prepare_response_headers(self, headers):
         return {}
@@ -281,7 +348,7 @@ class Downloader(object):
 class Site(resource.Resource):
     isLeaf = True
 
-    feed_regexp = re.compile(b'^/feed/(\d{1,10})')
+    feed_regexp = re.compile(rb'^/feed/(\d{1,10})')
 
 
     def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE):
@@ -299,6 +366,8 @@ class Site(resource.Resource):
         self.downloadercls = downloadercls or Downloader
 
     def startRequest(self, request, url, feed_config = None, selector_defer=None, sanitize=False):
+        if isinstance(url, bytes):
+            url = url.decode('utf-8', 'replace')
         downloader = self.downloadercls(self.feed, self.debug, self.snapshot_dir, self.stat_tool, self.memon,
                                         request=request, url=url, feed_config=feed_config,
                                         selector_defer=selector_defer, sanitize=sanitize, max_size=self.max_size)
@@ -319,12 +388,12 @@ class Site(resource.Resource):
             )
 
             d = agent.request(
-                'GET',
-                url,
+                b'GET',
+                url.encode('utf-8'),
                 twisted_headers({
-                    'Accept': ['text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
-                    'Accept-Encoding': ['gzip, deflate, sdch'],
-                    'User-Agent': [self.user_agent]
+                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
+                    b'Accept-Encoding': [b'gzip, deflate, sdch'],
+                    b'User-Agent': [self.user_agent.encode('utf-8')]
                 }),
                 None
             )
@@ -371,7 +440,7 @@ class Site(resource.Resource):
             return NOT_DONE_YET
         elif self.feed_regexp.match(request.uri) is not None: # feed
 
-            feed_id = self.feed_regexp.match(request.uri).groups()[0]
+            feed_id = self.feed_regexp.match(request.uri).groups()[0].decode('ascii')
             sanitize = request.uri.endswith(b'?sanitize=Y')
 
             time_left = self.limiter.check_request_time_limit(request.uri) if self.limiter else 0
@@ -383,13 +452,13 @@ class Site(resource.Resource):
                 res = self.feed.getFeedData(feed_id)
 
                 if isinstance(res, six.string_types): # error message
-                    return res
+                    return res.encode('utf-8')
 
                 url, feed_config = res
                 self.startRequest(request, url, feed_config, sanitize=sanitize)
                 return NOT_DONE_YET
         else: # neither page and feed
-            return 'Url is invalid'
+            return b'Url is invalid'
 
 
 class Server(object):

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import django.db.models.deletion
 from django.db import migrations, models
 import datetime
 
@@ -25,8 +26,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('text', models.TextField(max_length=65535)),
-                ('field', models.ForeignKey(to='frontend.Field')),
-                ('post', models.ForeignKey(to='frontend.Post')),
+                ('field', models.ForeignKey(to='frontend.Field', on_delete=django.db.models.deletion.CASCADE)),
+                ('post', models.ForeignKey(to='frontend.Post', on_delete=django.db.models.deletion.CASCADE)),
             ],
         ),
         migrations.AddField(
@@ -38,10 +39,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='post',
             name='feed',
-            field=models.ForeignKey(to='frontend.Feed'),
-        ),
-        migrations.AlterIndexTogether(
-            name='post',
-            index_together=set([('feed', 'md5sum')]),
+            field=models.ForeignKey(to='frontend.Feed', on_delete=django.db.models.deletion.CASCADE),
         ),
     ]
