@@ -119,8 +119,10 @@ def _get_image_xpath(image_xpath):
 
 def _get_date_xpath(date_xpath):
     base = _xpath_base(date_xpath)
-    # Prefer a machine-readable <time datetime="..."> value over its label.
-    return '(%s/@datetime | %s/child::node())[1]' % (base, base)
+    # Prefer a non-empty machine-readable datetime; otherwise keep every child
+    # node so a label split across elements is not truncated.
+    return ('%s/@datetime[normalize-space(.)]'
+            ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
 def _create_feed(url, xpathes, edited=False):

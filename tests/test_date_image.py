@@ -11,6 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 django.setup()
 
 from frontend.frontend.views import (  # noqa: E402
+    _get_date_xpath,
     _get_image_xpath,
     _get_link_xpath,
     _xpath_base,
@@ -38,6 +39,9 @@ def test_parse_date_returns_none_for_unusable_values():
     # unchanged article a new date on every refresh.
     assert _parse_date('12:30') is None
     assert _parse_date('20 Nov') is None
+    assert _parse_date('November 2026') is None
+    assert _parse_date('2026') is None
+    assert _parse_date('2026-11') is None
 
 
 def test_as_utc_normalizes_naive_and_aware_values():
@@ -47,6 +51,30 @@ def test_as_utc_normalizes_naive_and_aware_values():
                              tzinfo=datetime.timezone(datetime.timedelta(hours=3)))
     assert _as_utc(aware) == datetime.datetime(2026, 11, 20, 9, 0, tzinfo=datetime.timezone.utc)
     assert _as_utc(None) is None
+
+
+def test_parse_date_accepts_two_digit_years():
+    assert _parse_date('20 Nov 26').date() == datetime.date(2026, 11, 20)
+
+
+def test_date_xpath_prefers_datetime_and_keeps_all_children():
+    with_datetime = Selector(
+        text='<html><body><time datetime="2026-11-19T10:00:00Z">Yesterday</time></body></html>'
+    ).xpath('//body')
+    assert with_datetime.xpath(
+        _get_date_xpath('time[1]/child::node()')).extract() == ['2026-11-19T10:00:00Z']
+
+    label = Selector(
+        text='<html><body><time><span>20</span> Nov 2026</time></body></html>'
+    ).xpath('//body')
+    values = label.xpath(_get_date_xpath('time[1]/child::node()')).extract()
+    assert ''.join(values) == '<span>20</span> Nov 2026'
+
+    empty_attribute = Selector(
+        text='<html><body><time datetime="">20 Nov 2026</time></body></html>'
+    ).xpath('//body')
+    assert ''.join(empty_attribute.xpath(
+        _get_date_xpath('time[1]/child::node()')).extract()) == '20 Nov 2026'
 
 
 def test_xpath_base_only_strips_generated_suffix():
@@ -109,6 +137,14 @@ def test_image_mime_guesses_from_extension():
     assert _image_mime('https://example.com/a') == 'image/jpeg'
 
 
+def test_extract_image_uses_later_image_after_placeholder():
+    feed = Feed({})
+    node = Selector(
+        text='<article><img src="data:image/png;base64,AAA"><img src="/real.png"></article>'
+    ).xpath('//article')
+    assert feed._extract_image(node, 'img') == '/real.png'
+
+
 def test_usable_image_rejects_non_http_schemes():
     assert Feed._usable_image('https://example.com/a.png')
     assert Feed._usable_image('/img/a.png')
@@ -116,3 +152,4 @@ def test_usable_image_rejects_non_http_schemes():
     assert not Feed._usable_image('javascript:alert(1)')
     assert not Feed._usable_image('file:///etc/passwd')
     assert not Feed._usable_image('data:image/png;base64,AAA')
+    assert not Feed._usable_image('http://[::1')

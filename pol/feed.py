@@ -71,17 +71,19 @@ def _parse_date(value):
     if not value:
         return None
     text = re.sub(r'<[^>]+>', ' ', value)
-    # dateutil fills missing parts from today; a time or day/month without a
-    # year would give the same article a new date on every refresh.
-    if not re.search(r'\d{4}', text):
-        return None
+    # dateutil fills missing parts from its default, which would give an
+    # unchanged article a new date on every refresh. Parse with two different
+    # defaults and only accept values whose day, month and year are explicit.
     try:
-        parsed = date_parser.parse(text, fuzzy=True)
+        first = date_parser.parse(text, fuzzy=True, default=datetime.datetime(2000, 1, 1))
+        second = date_parser.parse(text, fuzzy=True, default=datetime.datetime(2001, 2, 2))
     except (ValueError, OverflowError, TypeError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
-    return parsed
+    if (first.year, first.month, first.day) != (second.year, second.month, second.day):
+        return None
+    if first.tzinfo is None:
+        first = first.replace(tzinfo=datetime.timezone.utc)
+    return first
 
 
 def _as_utc(value):
@@ -169,9 +171,9 @@ class Feed(object):
             return None
         # Prefer lazy-loading attributes: src is often a placeholder.
         for attr in self.IMAGE_ATTRIBUTES:
-            value = matches.xpath('@' + attr).get()
-            if self._usable_image(value):
-                return value
+            for value in matches.xpath('@' + attr).extract():
+                if self._usable_image(value):
+                    return value
         for value in matches.extract():
             if self._usable_image(value):
                 return value
@@ -182,7 +184,10 @@ class Feed(object):
         value = (value or '').strip()
         if not value or '<' in value or value.lower().startswith('data:'):
             return False
-        scheme = six.moves.urllib.parse.urlsplit(value).scheme.lower()
+        try:
+            scheme = six.moves.urllib.parse.urlsplit(value).scheme.lower()
+        except ValueError:
+            return False
         return scheme in ('', 'http', 'https')
 
     def _build_link(self, html, doc_url, url):

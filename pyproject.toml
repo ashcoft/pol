@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pol"
 version = "1.0.3"
 description = "RSS generator website"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
