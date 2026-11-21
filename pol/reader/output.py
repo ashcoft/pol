@@ -45,7 +45,10 @@ def _cdata(value):
 def _safe_url(value):
     if not value:
         return ''
-    parts = urlsplit(value)
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return ''
     return value if parts.scheme.lower() in ('http', 'https') else ''
 
 

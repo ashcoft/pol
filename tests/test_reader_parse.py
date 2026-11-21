@@ -377,3 +377,8 @@ def test_json_feed_keeps_content_text_when_html_is_empty():
     feed = parse_feed(payload.encode('utf-8'), 'https://example.com/feed.json')
     assert 'Tom' in feed.items[0].content
     assert html_to_text(feed.items[0].content) == 'Tom & Jerry'
+
+
+def test_html_to_text_keeps_a_plain_ampersand_word():
+    assert html_to_text('see https://example.com/?a=1&copy=2') == 'see https://example.com/?a=1&copy=2'
+    assert html_to_text('Tom &amp; Jerry') == 'Tom & Jerry'

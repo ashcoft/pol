@@ -145,3 +145,11 @@ def test_rss_self_link_points_at_the_feed_not_the_homepage():
     assert 'rel="self"' in data
     assert 'href="https://example.com/feed"' in data
     assert '<link>https://example.com/</link>' in data
+
+
+def test_rss_export_survives_a_malformed_feed_url():
+    feed = _feed()
+    feed.url = 'http://[bad/feed'
+    data = to_rss(feed)
+    assert '<link>https://example.com/</link>' in data
+    assert 'rel="self"' not in data

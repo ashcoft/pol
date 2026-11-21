@@ -243,11 +243,20 @@ def _inner_html(element):
         etree.tostring(child, encoding='unicode', method='html') for child in element)
 
 
+_BASIC_ENTITY_RE = re.compile(r'&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);')
+
+
+def _unescape_basic(text):
+    # Only entities that end with ';': a plain-text `&copy=` in a URL is not an entity and
+    # must survive unchanged.
+    return _BASIC_ENTITY_RE.sub(lambda match: html_unescape(match.group(0)), text)
+
+
 def html_to_text(fragment):
     if not fragment:
         return ''
     if '<' not in fragment:
-        return re.sub(r'\s+', ' ', html_unescape(fragment)).strip()
+        return re.sub(r'\s+', ' ', _unescape_basic(fragment)).strip()
     try:
         root = lxml_html.fragment_fromstring(fragment, create_parent='div')
     except (etree.ParserError, ValueError, TypeError):
