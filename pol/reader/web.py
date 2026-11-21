@@ -55,11 +55,13 @@ def _int_arg(request, name, default):
 class ReaderEndpoints:
     def __init__(self, user_agent, cache_backend='memory', cache_dir=None,
                  cache_ttl=3600, redis_url=None, timeout=DEFAULT_TIMEOUT,
-                 max_size=DEFAULT_MAX_SIZE, verify_ssl=True):
+                 max_size=DEFAULT_MAX_SIZE, verify_ssl=True,
+                 block_private_hosts=True):
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.timeout = timeout
         self.max_size = max_size
         self.verify_ssl = verify_ssl
+        self.block_private_hosts = block_private_hosts
         store = make_cache(cache_backend, directory=cache_dir, url=redis_url)
         self.http_cache = HttpCache(store, ttl=cache_ttl)
 
@@ -75,6 +77,7 @@ class ReaderEndpoints:
             verify_ssl=self.verify_ssl,
             allow_meta_refresh=options.follow_meta,
             cache_only=options.cache_only,
+            block_private_hosts=self.block_private_hosts,
         )
 
     def _options(self, request):

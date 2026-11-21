@@ -15,7 +15,10 @@ from . import charset
 from .errors import ParseError
 from .model import Feed, Item
 
-_IMG_SRC_RE = re.compile(r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']', re.IGNORECASE)
+_IMAGE_URL_RE = re.compile(
+    r'\.(?:jpe?g|png|gif|webp|avif|svg)(?:[?#]|$)', re.IGNORECASE)
+# Types that say nothing about the payload, so an image-looking URL still counts.
+_INCONCLUSIVE_TYPES = frozenset({'', 'application/octet-stream', 'binary/octet-stream'})
 _DROP_TAGS = frozenset({'script', 'style', 'noscript', 'iframe', 'object',
                         'embed', 'form', 'input', 'button', 'svg', 'canvas'})
 _LAZY_ATTRS = ('data-src', 'data-original', 'data-lazy-src', 'data-url')
@@ -77,22 +80,44 @@ def _atom_link(element, rel=None):
 
 def _enclosures(element):
     found = []
-    for child in element:
+
+    def add(child):
         name = _local(child)
-        url = _attr(child, 'url') or _attr(child, 'href')
+        url = _attr(child, 'url') or _attr(child, 'href') or _attr(child, 'src')
         if name not in ('enclosure', 'content', 'thumbnail', 'link') or not url:
-            continue
-        kind = _attr(child, 'type')
-        medium = _attr(child, 'medium')
+            return
+        if url.lower().startswith(('data:', 'javascript:')):
+            return
+        # MIME types may carry parameters, e.g. `application/octet-stream; name="a.jpg"`.
+        kind = _attr(child, 'type').split(';')[0].strip()
+        medium = _attr(child, 'medium').lower()
         if name == 'link' and (_attr(child, 'rel') or '').lower() != 'enclosure':
-            continue
-        if name in ('content', 'thumbnail') and medium and medium != 'image' \
-                and not kind.startswith('image/'):
-            continue
+            return
+        if medium and medium != 'image' and not kind.lower().startswith('image/'):
+            return
+        if name in ('content', 'thumbnail') and medium != 'image' \
+                and kind.lower() not in _INCONCLUSIVE_TYPES \
+                and not kind.lower().startswith('image/'):
+            return
         entry = {'url': url, 'type': kind or 'application/octet-stream',
-                 'length': _attr(child, 'length')}
+                 'length': _attr(child, 'length'), 'medium': medium}
         if entry not in found:
             found.append(entry)
+
+    for child in element:
+        name = _local(child)
+        if name in ('enclosure', 'content', 'thumbnail', 'link'):
+            add(child)
+            # A media:thumbnail can sit inside the media:content it illustrates.
+            for nested in _children(child, 'thumbnail'):
+                add(nested)
+        elif name == 'group':
+            for nested in child:
+                if _local(nested) in ('content', 'thumbnail'):
+                    add(nested)
+                    for deeper in _children(nested, 'thumbnail'):
+                        add(deeper)
+
     return found
 
 
@@ -218,15 +243,42 @@ def html_to_text(fragment):
     return re.sub(r'\s+', ' ', root.text_content()).strip()
 
 
+def _is_image_enclosure(enclosure):
+    kind = (enclosure.get('type') or '').lower()
+    if kind.startswith('image/'):
+        return True
+    # An explicit audio/video type wins over an image-looking file extension.
+    if kind not in _INCONCLUSIVE_TYPES:
+        return False
+    return bool(_IMAGE_URL_RE.search(enclosure.get('url') or ''))
+
+
+def _first_img_src(fragment):
+    """First usable <img src> in an HTML fragment, in document order."""
+    if not fragment or '<' not in fragment:
+        return ''
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError, TypeError):
+        return ''
+    for element in root.iter('img'):
+        if not isinstance(element.tag, str):
+            continue
+        source = (element.get('src') or '').strip()
+        if source and not source.lower().startswith(('data:', 'javascript:')):
+            return source
+    return ''
+
+
 def _images(item, description, content):
     images = []
     for enclosure in item.enclosures:
-        if enclosure['type'].startswith('image/'):
+        if _is_image_enclosure(enclosure) and enclosure['url'] not in images:
             images.append(enclosure['url'])
     for fragment in (content, description):
-        for match in _IMG_SRC_RE.findall(fragment or ''):
-            if match not in images:
-                images.append(match)
+        source = _first_img_src(fragment)
+        if source and source not in images:
+            images.append(source)
     item.images = images
 
 

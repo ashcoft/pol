@@ -8,7 +8,8 @@ from twisted.web import resource, server
 from pol.reader.web import ReaderEndpoints
 
 port = int(sys.argv[1])
-endpoints = ReaderEndpoints('pol-test/1', cache_backend='memory', timeout=5)
+endpoints = ReaderEndpoints('pol-test/1', cache_backend='memory', timeout=5,
+                            block_private_hosts=False)
 
 
 class Root(resource.Resource):

@@ -14,11 +14,14 @@ from lxml import html as lxml_html
 from . import charset
 from .cache import HttpCache
 from .errors import FetchError
+from .safety import assert_public_url
 from .urls import clean_url, normalize_url
 
 DEFAULT_USER_AGENT = 'pol-reader/1.0 (+https://github.com/ashcoft/pol)'
 DEFAULT_TIMEOUT = 20
 DEFAULT_MAX_SIZE = 8 * 1024 * 1024
+# Off for the library default so local fixtures keep working; the HTTP surface turns it on.
+DEFAULT_BLOCK_PRIVATE_HOSTS = False
 MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
 
 FEED_CONTENT_TYPES = (
@@ -122,7 +125,7 @@ class Fetcher:
     def __init__(self, user_agent=DEFAULT_USER_AGENT, timeout=DEFAULT_TIMEOUT,
                  max_size=DEFAULT_MAX_SIZE, cache: HttpCache | None = None,
                  transport=None, verify_ssl=True, allow_meta_refresh=True,
-                 cache_only=False):
+                 cache_only=False, block_private_hosts=None):
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.timeout = timeout
         self.max_size = max_size
@@ -131,10 +134,15 @@ class Fetcher:
             timeout=timeout, max_size=max_size, verify_ssl=verify_ssl)
         self.allow_meta_refresh = allow_meta_refresh
         self.cache_only = cache_only
+        self.block_private_hosts = (DEFAULT_BLOCK_PRIVATE_HOSTS
+                                    if block_private_hosts is None
+                                    else block_private_hosts)
 
     def fetch(self, url, headers=None, data=None, method='GET', force=False,
               allow_meta=True, _depth=0):
         url = clean_url(normalize_url(url))
+        if self.block_private_hosts:
+            assert_public_url(url)
         request_headers = {
             'User-Agent': self.user_agent,
             'Accept': ('application/rss+xml, application/atom+xml, '
@@ -157,6 +165,9 @@ class Fetcher:
         status, response_headers, body, final_url = self.transport.request(
             url, request_headers, data=data, method=method)
         final_url = clean_url(final_url)
+        if self.block_private_hosts:
+            # A redirect can land somewhere the requested URL would not have been allowed.
+            assert_public_url(final_url)
 
         if status == 304 and cached:
             self.cache.renew(url)

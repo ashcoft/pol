@@ -169,3 +169,70 @@ def test_feed_url_defaults_are_kept():
     feed = parse_feed(RSS.encode(), 'https://example.com/feed')
     assert feed.url == 'https://example.com/feed'
     assert feed.items[0].date.tzinfo == timezone.utc
+
+
+MEDIA_RSS = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Media</title>
+    <link>https://example.com/</link>
+    <item>
+      <title>Clip</title>
+      <link>https://example.com/clip</link>
+      <media:content url="https://example.com/clip.mp4" type="video/mp4">
+        <media:thumbnail url="https://example.com/still.jpg"/>
+      </media:content>
+    </item>
+    <item>
+      <title>Groups</title>
+      <link>https://example.com/groups</link>
+      <media:group><media:content url="https://example.com/a.mp4" type="video/mp4"/></media:group>
+      <media:group><media:thumbnail url="https://example.com/group.jpg"/></media:group>
+    </item>
+    <item>
+      <title>Params</title>
+      <link>https://example.com/params</link>
+      <enclosure url="https://example.com/cover.jpg"
+                 type="application/octet-stream; name=&quot;cover.jpg&quot;"/>
+    </item>
+  </channel>
+</rss>
+"""
+
+
+def test_nested_and_grouped_media_thumbnails():
+    feed = parse_feed(MEDIA_RSS.encode('utf-8'), 'https://example.com/feed.xml')
+    assert feed.items[0].images == ['https://example.com/still.jpg']
+    assert feed.items[1].images == ['https://example.com/group.jpg']
+    assert feed.items[2].images == ['https://example.com/cover.jpg']
+
+
+def _item_with_description(description):
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>T</title>
+  <item><title>A</title><link>https://example.com/a</link>
+    <description><![CDATA[%s]]></description></item>
+</channel></rss>""" % description
+    return parse_feed(xml.encode('utf-8'), 'https://example.com/feed.xml').items[0]
+
+
+def test_inline_image_uses_src_not_data_src():
+    item = _item_with_description('<img data-src="/placeholder.gif" src="/photo.jpg">')
+    assert item.images == ['https://example.com/photo.jpg']
+
+
+def test_inline_image_accepts_unquoted_src():
+    item = _item_with_description('<img src=/photo.jpg?w=800&h=600>')
+    assert item.images == ['https://example.com/photo.jpg?w=800&h=600']
+
+
+def test_inline_image_ignores_escaped_example():
+    item = _item_with_description(
+        '<code>&lt;img src="/example.png"&gt;</code><img src="/real.png">')
+    assert item.images == ['https://example.com/real.png']
+
+
+def test_inline_image_skips_data_uri():
+    item = _item_with_description(
+        '<img src="data:image/gif;base64,R0lGOD"><img src="/real.png">')
+    assert item.images == ['https://example.com/real.png']
