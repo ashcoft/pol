@@ -256,6 +256,23 @@ class Downloader(object):
     def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
         sresponse = self._decompress(sresponse)
 
+        # Pages behind bot protection (Cloudflare and friends) return a
+        # challenge instead of content; show a clear message rather than a
+        # page nobody can pick elements from.
+        if not self.feed_config:
+            if self._is_bot_challenge(sresponse.body):
+                self._write_error(
+                    502, 'This site blocks automated access',
+                    'The page answered with a bot-protection challenge (for example '
+                    'Cloudflare\'s "Just a moment..."), so its content cannot be read '
+                    'here. Try another page or subscribe to the site\'s own RSS feed.')
+                return
+            if sresponse.status >= 400:
+                self._write_error(
+                    sresponse.status, 'The page returned HTTP %s' % sresponse.status,
+                    'The site refused the request, so there is nothing to pick elements from.')
+                return
+
         response_headers = self.prepare_response_headers(sresponse.headers)
 
         if (isinstance(sresponse, TextResponse)):
@@ -276,6 +293,27 @@ class Downloader(object):
 
     # A small compressed body can expand to hundreds of megabytes.
     MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024
+
+    BOT_CHALLENGE_MARKERS = (
+        b'just a moment...',
+        b'cf-browser-verification',
+        b'challenge-platform',
+        b'attention required! | cloudflare',
+        b'enable javascript and cookies to continue',
+        b'checking your browser before accessing',
+    )
+
+    def _is_bot_challenge(self, body):
+        lowered = body.lower()
+        return any(marker in lowered for marker in self.BOT_CHALLENGE_MARKERS)
+
+    def _write_error(self, status, title, detail):
+        page = self.error_html(
+            '<h1>PolitePol says: "%s"</h1>\n<p>%s</p>' % (escape(title), escape(detail)))
+        self.request.setResponseCode(status)
+        self.request.setHeader(b'Content-Type', b'text/html; charset=utf-8')
+        self.request.write(page.encode('utf-8'))
+        self.request.finish()
 
     def _decompress(self, response):
         header = response.headers.get(b'Content-Encoding', b'')
@@ -391,8 +429,15 @@ class Site(resource.Resource):
                 b'GET',
                 url.encode('utf-8'),
                 twisted_headers({
-                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'],
-                    b'Accept-Encoding': [b'gzip, deflate, sdch'],
+                    b'Accept': [b'text/html,application/xhtml+xml,application/xml;q=0.9,'
+                                b'image/avif,image/webp,*/*;q=0.8'],
+                    b'Accept-Language': [b'en-US,en;q=0.9'],
+                    b'Accept-Encoding': [b'gzip, deflate, br'],
+                    b'Upgrade-Insecure-Requests': [b'1'],
+                    b'Sec-Fetch-Dest': [b'document'],
+                    b'Sec-Fetch-Mode': [b'navigate'],
+                    b'Sec-Fetch-Site': [b'none'],
+                    b'Sec-Fetch-User': [b'?1'],
                     b'User-Agent': [self.user_agent.encode('utf-8')]
                 }),
                 None
