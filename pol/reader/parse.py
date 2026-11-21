@@ -243,7 +243,7 @@ def _inner_html(element):
         etree.tostring(child, encoding='unicode', method='html') for child in element)
 
 
-_BASIC_ENTITY_RE = re.compile(r'&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);')
+_BASIC_ENTITY_RE = re.compile(r'&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});')
 
 
 def _unescape_basic(text):

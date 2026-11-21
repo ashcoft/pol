@@ -382,3 +382,9 @@ def test_json_feed_keeps_content_text_when_html_is_empty():
 def test_html_to_text_keeps_a_plain_ampersand_word():
     assert html_to_text('see https://example.com/?a=1&copy=2') == 'see https://example.com/?a=1&copy=2'
     assert html_to_text('Tom &amp; Jerry') == 'Tom & Jerry'
+
+
+def test_html_to_text_decodes_named_entities_that_end_with_a_semicolon():
+    # Whitespace is normalised, so &nbsp; becomes a plain space.
+    assert html_to_text('a&nbsp;b &copy; 2026') == 'a b \u00a9 2026'
+    assert html_to_text('keep &copy= literal') == 'keep &copy= literal'
