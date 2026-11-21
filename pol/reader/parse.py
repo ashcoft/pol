@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import escape as html_escape
+from html import unescape as html_unescape
 from html.entities import html5
 from urllib.parse import urljoin
 
