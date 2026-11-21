@@ -1,4 +1,6 @@
+import urllib.error
 import urllib.parse
+import urllib.request
 import json
 import re
 
@@ -10,12 +12,32 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
 
+from . import settings as frontend_settings
 from .forms import IndexForm
+from .models import Feed, Field, FeedField
 from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
-
 from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
 from .setup_tool_ext import build_xpath_results
-from .models import Feed, Field, FeedField
+
+DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
+
+_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):(?!\d)', re.IGNORECASE)
+
+
+def _normalize_discovery_url(url):
+    """Mirror pol.reader.urls.normalize_url without importing the reader package."""
+    trimmed = (url or '').strip()
+    if not trimmed:
+        raise ValueError('URL is required')
+    scheme = _SCHEME_RE.match(trimmed)
+    # The user-controlled value is deliberately the URL host; URLValidator below
+    # rejects anything that is not a well-formed http(s) URL.
+    candidate = trimmed if scheme else 'https://' + trimmed  # nosemgrep
+    try:
+        URLValidator(schemes=['http', 'https'])(candidate)
+    except ValidationError as exc:
+        raise ValueError('Invalid URL format') from exc
+    return candidate
 
 def index(request):
     if request.method == 'GET' and 'url' in request.GET:
@@ -284,3 +306,30 @@ def preview(request, feed_id):
                         })
 
     return HttpResponseBadRequest('Only GET method supported')
+
+
+def discover(request):
+    """Proxy feed discovery to the downloader (used by the index page and dev)."""
+    url = (request.GET.get('url') or '').strip()
+    if not url:
+        return HttpResponseBadRequest('Url is required')
+    try:
+        url = _normalize_discovery_url(url)
+    except ValueError:
+        return HttpResponseBadRequest('Invalid url')
+
+    if not url.lower().startswith(('http://', 'https://')):
+        return HttpResponseBadRequest('Invalid url')
+
+    target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
+    try:
+        with urllib.request.urlopen(target, timeout=35) as response:  # nosec B310
+            payload = response.read()
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        return HttpResponse(exc.read(), status=exc.code,
+                            content_type='application/json')
+    except Exception:
+        return HttpResponse(json.dumps({'error': 'Feed discovery failed'}),
+                            status=502, content_type='application/json')
+    return HttpResponse(payload, status=status, content_type='application/json')
