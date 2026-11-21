@@ -9,40 +9,45 @@
 {% endblock %}
 
 {% block content %}
-<div class="welcom" style="position: relative">
+<style>
+.rss-finder-home,
+.rss-finder-home * {
+    font-style: normal !important;
+}
+</style>
+<div class="welcom rss-finder-home" style="position: relative">
     <div id="help" style="position: absolute; z-index: 2; right:0; top: 0; width: 60px;">
     <a href="#helpModal" id="helpModalRef" data-toggle="modal">
     <span>{% trans 'help' %}</span>
     <img id="buoy" src="{% static 'frontend/images/buoy.png' %}" alt="{% trans 'help' %}" style="width: 60px; height: 60px" />
     </a>
     </div>
-    <img src="{% static 'frontend/images/pol.png' %}" alt="Hi!" />
-    <h1>{% trans "brand" %}</h1>
-
-    <p>{% trans "hello" %}</p>
-    {% if form.url.errors %}
-    <div class="alert alert-error">
-        {{ form.url.errors }}
+    <div class="pol-brand">
+        <img src="{% static 'frontend/images/pol.png' %}" alt="Hi!" />
+        <h1>{% trans "brand" %}</h1>
     </div>
-    {% endif %}
-    <form method="get" class="form-horizontal">
-        <div class="control-group <%= 'error' if defined?(@error) %>">
-            <div class="input-append">
-                {{ form.url }} 
-                <span class="normal">
-                    <input type="submit" id="go-btn" value="{% trans 'go' %}" class="btn btn-primary btn-primary-reload" />
-                </span>
-            </div>
+
+    <section class="rss-finder-hero">
+        <h2 class="rss-finder-title">{% trans "RSS Finder" %}</h2>
+        <p class="rss-finder-subtitle">{% trans "Discover RSS feeds from any website" %}</p>
+
+        {% if form.url.errors %}
+        <div class="alert alert-error">
+            {{ form.url.errors }}
         </div>
-    </form>
+        {% endif %}
 
-    <div class="feed-finder">
-        <h3>{% trans "Find RSS feeds" %}</h3>
-        <p class="muted">{% trans "Enter a page URL above, then look for feeds it already publishes." %}</p>
-        <button type="button" id="find-feeds-btn" class="btn" aria-controls="feed-finder-results">{% trans "Find feeds" %}</button>
-        <div id="feed-finder-status" class="muted" style="margin-top: .5rem" role="status" aria-live="polite"></div>
-        <ul id="feed-finder-results" class="unstyled" aria-live="polite"></ul>
-    </div>
+        <form method="get" class="rss-search-form">
+            <div class="rss-search-box">
+                {{ form.url }}
+                <input type="submit" id="go-btn" value="{% trans 'Find RSS' %}" class="rss-search-button" />
+            </div>
+        </form>
+        <p class="rss-search-help">{% trans "Enter any website URL. If it publishes RSS, we'll list the feeds; otherwise we'll open the feed builder." %}</p>
+
+        <div id="feed-finder-status" class="rss-finder-status" role="status" aria-live="polite"></div>
+        <ul id="feed-finder-results" class="rss-finder-results" aria-live="polite"></ul>
+    </section>
 </div>
 
 <div id="feed-preview-overlay" class="feed-preview-overlay" aria-hidden="true"></div>
