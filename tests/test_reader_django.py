@@ -27,6 +27,17 @@ TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['test
 
 
 @override_settings(**TEST_SETTINGS)
+def test_index_supports_finder_deep_link_and_preview_pane():
+    response = Client().get('/en/', {'q': 'https://example.com'})
+    assert response.status_code == 200
+    html = response.content.decode('utf-8')
+    assert 'find-feeds-btn' in html
+    assert 'feed-preview-panel' in html
+    assert 'feed-preview-overlay' in html
+    assert 'feed-preview-body' in html
+
+
+@override_settings(**TEST_SETTINGS)
 def test_discover_requires_url():
     response = Client().get('/discover')
     assert response.status_code == 400

@@ -21,6 +21,7 @@ from twisted.web.server import NOT_DONE_YET
 from .cache import HttpCache, make_cache
 from .errors import FetchError, InvalidURLError, ParseError
 from .http import DEFAULT_MAX_SIZE, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, Fetcher
+from .parse import sanitize_html
 from .pipeline import Options, discover, process
 
 _PATHS = frozenset({
@@ -210,7 +211,7 @@ class ReaderEndpoints:
                         'title': item.title,
                         'link': item.link,
                         'date': item.date.isoformat() if item.date else None,
-                        'summary': item.summary,
+                        'summary': sanitize_html(item.summary),
                         'image': item.images[0] if item.images else None,
                     }
                     for item in feed.items[:50]

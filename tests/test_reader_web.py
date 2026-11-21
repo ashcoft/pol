@@ -107,6 +107,23 @@ def test_find_feeds_api_get_and_post(reader_server, http_server):
     assert payload['feeds'][0]['url'] == http_server.base_url + '/feed.xml'
 
 
+def test_feed_preview_sanitizes_summary(reader_server, http_server):
+    unsafe = """<?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0"><channel><title>Unsafe</title><link>https://example.com/</link>
+    <description>d</description><item><title>Bad</title><link>https://example.com/bad</link>
+    <description><![CDATA[<p>Hello</p><script>alert(1)</script>]]></description>
+    </item></channel></rss>"""
+    http_server.routes['/unsafe.xml'] = (
+        200, {'Content-Type': 'application/rss+xml'}, unsafe)
+
+    response = _get(reader_server + '/api/feed-preview',
+                    url=http_server.base_url + '/unsafe.xml')
+    payload = json.loads(response.read().decode('utf-8'))
+    summary = payload['items'][0]['summary']
+    assert 'Hello' in summary
+    assert '<script' not in summary
+
+
 def test_feed_preview(reader_server, http_server):
     response = _get(reader_server + '/api/feed-preview',
                     url=http_server.base_url + '/feed.xml')

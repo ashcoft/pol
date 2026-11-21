@@ -42,6 +42,11 @@ existing feeds:
 * Follow HTTP redirects and `<meta http-equiv="refresh">` redirects.
 * Same features from a `morss`-style command line.
 
+The index page accepts `?q=<page url>` (for example
+`/?q=https://www.cyclingnews.com`) to run discovery immediately. Each result
+has a **Preview** action that opens a slide-in pane with the latest feed items,
+plus **Copy** and **Open** actions, mirroring the rss-finder interface.
+
 ## Reader HTTP API
 
 The downloader server exposes these endpoints (nginx proxies them, see

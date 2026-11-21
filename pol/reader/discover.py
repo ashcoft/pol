@@ -115,6 +115,7 @@ def _feed_mime(response, feed):
 def _verify(refs, fetcher, limit):
     verified = []
     seen = set()
+    seen_final = set()
     attempts = 0
     for ref in refs:
         if len(verified) >= limit or attempts >= limit + 5:
@@ -133,9 +134,13 @@ def _verify(refs, fetcher, limit):
             continue
         if not feed.items and not feed.title:
             continue
+        final_url = clean_url(response.url or url)
+        if final_url in seen_final:
+            continue
+        seen_final.add(final_url)
         verified.append(FeedRef(
             title=ref.title or feed.title,
-            url=response.url or url,
+            url=final_url,
             type=ref.type or _feed_mime(response, feed),
             source=ref.source,
         ))

@@ -80,6 +80,18 @@ def test_find_feeds_uses_well_known_paths(http_server):
     assert [ref.url for ref in refs] == [http_server.base_url + '/feed']
 
 
+def test_find_feeds_deduplicates_redirected_candidates(http_server):
+    http_server.routes.update({
+        '/': (200, {'Content-Type': 'text/html'}, '<html><body>no links</body></html>'),
+        '/feed': (302, {'Location': '/feed.xml'}, ''),
+        '/feed/': (302, {'Location': '/feed.xml'}, ''),
+        '/feed.xml': (200, {'Content-Type': 'application/rss+xml'}, RSS_FEED),
+    })
+    refs = find_feeds(http_server.base_url + '/')
+    urls = [ref.url for ref in refs]
+    assert urls.count(http_server.base_url + '/feed.xml') == 1
+
+
 def test_find_feeds_with_injected_fetcher(http_server):
     http_server.routes['/'] = (200, {'Content-Type': 'text/html'}, '<html></html>')
     fetcher = Fetcher(timeout=5)
