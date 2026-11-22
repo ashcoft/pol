@@ -14,7 +14,6 @@ from dateutil import parser as date_parser
 from feedgenerator import Rss201rev2Feed, Enclosure
 import datetime
 
-import MySQLdb
 from contextlib import closing
 from settings import DATABASES, DOWNLOADER_USER_AGENT
 from twisted.logger import Logger
@@ -115,8 +114,9 @@ class Feed(object):
     def save_post(self, conn, created, feed_id, post_fields):
         with conn.cursor() as cur:
             cur.execute("""insert into frontend_post (md5sum, created, feed_id)
-                            values (unhex(%s), %s, %s)""", (post_fields['md5'], created, feed_id))
-            post_id = cur.lastrowid
+                            values (%s, %s, %s) returning id""",
+                        (bytes.fromhex(post_fields['md5']), created, feed_id))
+            post_id = cur.fetchone()[0]
             log.info('Post saved id:{id!r}', id=post_id)
             return post_id
 
@@ -133,12 +133,12 @@ class Feed(object):
         fetched_dates = {}
         with closing(get_conn(self.db_creds)) as conn:
             with conn.cursor() as cur:
-                quoted_hashes = ','.join(["unhex('%s')" % (i['md5']) for i in items])
+                hashes = [bytes.fromhex(item['md5']) for item in items]
 
-                cur.execute("""select lower(hex(p.md5sum)), p.created, p.id
+                cur.execute("""select encode(p.md5sum, 'hex'), p.created, p.id
                                from frontend_post p
-                               where p.md5sum in (%s)
-                               and p.feed_id=%s""" % (quoted_hashes, feed_id,))
+                               where p.md5sum = any(%s)
+                               and p.feed_id=%s""", (hashes, feed_id))
                 rows = cur.fetchall()
                 log.debug('Selected {count!r} posts', count=len(rows))
                 for row in rows:

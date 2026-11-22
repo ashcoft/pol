@@ -113,11 +113,11 @@ when Redis is unavailable.
 ## Requirements
 
 * Python 3.12+ (3.15 recommended, used by CI and Docker)
-* MySQL 5.7+ (used by both the frontend and the downloader)
-* System build dependencies for `mysqlclient`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
+* PostgreSQL 13+ (used by both the frontend and the downloader)
+* System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
 ```bash
-sudo apt-get install build-essential pkg-config default-libmysqlclient-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev gettext
+sudo apt-get install build-essential pkg-config libpq-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev gettext
 ```
 
 Optional, only if you rely on Django Pipeline's LESS/SASS compilation instead of prebuilt assets:
@@ -138,7 +138,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-pip install mysqlclient pytest
+pip install pytest
 ```
 
 Create the Django settings module (the repo expects `settings.py` next to the `frontend` package; it is git-ignored):
@@ -150,7 +150,7 @@ cp frontend/frontend/settings.py.example frontend/frontend/settings.py
 Create the database:
 
 ```bash
-mysql -uroot -p -e 'CREATE DATABASE pol DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;'
+createdb pol    # or: psql -U postgres -c 'CREATE DATABASE pol;'
 ```
 
 Initialise the database:
@@ -195,38 +195,108 @@ The template forwards the browser `Host` header so Django's CSRF checks pass beh
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
-docker compose up -d --build   # or: docker-compose up -d --build
+docker compose up -d
+```
+
+That pulls `ghcr.io/ashcoft/pol:latest`, starts PostgreSQL and the app, and serves
+on <http://localhost:8088>. With Compose v1, run `docker-compose up -d`.
+
+The defaults are meant for a first run. Copy `.env.example` to `.env` **before
+the first start** to change the database password, `SECRET_KEY`, public
+hostname and TLS origin:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+Build the image locally instead of pulling it:
+
+```bash
+docker compose up -d --build
 ```
 
 The stack starts two services:
 
-* `politepol` -the app container (built from the Dockerfile): `frontend/start.sh` starts nginx, Gunicorn (the Django WSGI app), and the downloader; serves HTTP on port `8088`
-* `dbpolitepol` - MySQL 5.7 with a persisted volume in `./mysql`
+* `politepol` - nginx, Gunicorn (the Django WSGI app) and the downloader in one
+  container; serves HTTP on `WEB_PORT` (default `8088`)
+* `dbpolitepol` - PostgreSQL, with its data in the `pol_pg` volume
 
-`wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and Gunicorn.
+At start, `frontend/start.sh` waits for PostgreSQL, generates `settings.py`
+from the environment, patches nginx's listen port, runs migrations and loads
+`fields.json`, then starts the downloader, nginx and Gunicorn. `collectstatic`
+runs during the image build. Gunicorn
+is installed from `requirements.txt`, so the app never falls back to the Django
+development server. Static files are served by WhiteNoise.
 
-Gunicorn is installed from `requirements.txt`, so the app no longer falls back to
-the Django development server. `GUNICORN_WORKERS` (default `3`),
-`GUNICORN_THREADS` (default `4`) and `GUNICORN_TIMEOUT` (default `120`) tune it.
-Static files are served by WhiteNoise, and `frontend/start.sh` runs
-`collectstatic` before Gunicorn starts, so `/static/` keeps working without the
-Django development server.
+Compose reads `.env` for these values:
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`, `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `POL_CACHE_BACKEND`, `POL_CACHE_DIR`, `POL_REDIS_URL`, `POL_READER_TIMEOUT`, `POL_READER_MAX_SIZE`, `POL_READER_VERIFY_SSL`.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DB_NAME` | `pol` | database name |
+| `DB_USER` | `pol` | database user |
+| `DB_PASSWORD` | `change-me` | database password |
+| `DB_PORT` | `5432` | database port |
+| `WEB_PORT` | `8088` | public HTTP port |
+| `TIME_ZONE` | `UTC` | Django timezone |
+| `DEBUG` | `False` | keep `False` in production |
+| `SECRET_KEY` | `change-me-in-production` | set a long random value |
+| `ALLOWED_HOSTS` | loopback | comma-separated public hostnames |
+| `CSRF_TRUSTED_ORIGINS` | empty | e.g. `https://feeds.example.com` |
+| `GUNICORN_WORKERS` | `3` | Gunicorn worker processes |
+| `GUNICORN_THREADS` | `4` | threads per worker |
+| `GUNICORN_TIMEOUT` | `120` | Gunicorn timeout in seconds |
 
-### Access (port 8088)
+Example `.env` for a public HTTPS site:
 
-`ALLOWED_HOSTS` defaults to loopback, so set it to the hostname or IP you use
-to reach the app (comma separated), then open it in a browser, e.g.:
+```dotenv
+DB_PASSWORD=change-me
+WEB_PORT=8088
+DEBUG=False
+SECRET_KEY=put-a-long-random-value-here
+ALLOWED_HOSTS=feeds.example.com
+CSRF_TRUSTED_ORIGINS=https://feeds.example.com
+```
+
+### Access
 
 ```bash
-ALLOWED_HOSTS=192.168.0.10 docker compose up -d
+http://localhost:8088
 ```
 
+The container's nginx speaks HTTP. Terminate TLS in front of it, for example
+with a host nginx and certbot:
+
+```nginx
+location / {
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_pass http://127.0.0.1:8088;
+}
 ```
-http://localhost:8088
-http://192.168.0.10:8088
+
+Then set `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` to the public HTTPS host.
+
+### Operations
+
+```bash
+# logs
+docker compose logs -f politepol
+
+# upgrade
+docker compose pull
+docker compose up -d
+
+# database backup
+docker compose exec dbpolitepol pg_dump -U "$DB_USER" "$DB_NAME" > pol.sql
 ```
+
+The `Publish Docker image` workflow builds and pushes
+`ghcr.io/ashcoft/pol:latest` on every push to `main`, plus `sha-*` tags and
+semver tags for `v*` releases. GHCR packages are private by default; make the
+package public in the repository's package settings if anonymous pulls are
+needed.
 
 ## Tests
 
