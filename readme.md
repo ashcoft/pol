@@ -177,7 +177,7 @@ sudo cp nginx/default.site-example /etc/nginx/sites-available/default
 sudo service nginx reload
 ```
 
-The template proxies `/` to the Django dev server (port 8000) and `/downloader`, `/feed`, `/feed1` to the downloader server(port 1234). In Docker, `frontend/start.sh` patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose file exposes.
+The template proxies `/` to Gunicorn (port 8000) and `/downloader`, `/feed`, `/feed1` to the downloader server(port 1234). In Docker, `frontend/start.sh` patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose file exposes.
 
 The template forwards the browser `Host` header so Django's CSRF checks pass behind the proxy. If you reach the app by anything other than `localhost`/`127.0.0.1`, export `ALLOWED_HOSTS` (comma separated) with that name or IP before starting Django.
 
@@ -191,12 +191,19 @@ docker compose up -d --build   # or: docker-compose up -d --build
 
 The stack starts two services:
 
-* `politepol` -the app container (built from the Dockerfile): `frontend/start.sh` starts nginx, Django, and the downloader; serves HTTP on port `8088`
+* `politepol` -the app container (built from the Dockerfile): `frontend/start.sh` starts nginx, Gunicorn (the Django WSGI app), and the downloader; serves HTTP on port `8088`
 * `dbpolitepol` - MySQL 5.7 with a persisted volume in `./mysql`
 
-`wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and the Django server.
+`wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and Gunicorn.
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`, `POL_CACHE_BACKEND`, `POL_CACHE_DIR`, `POL_REDIS_URL`, `POL_READER_TIMEOUT`, `POL_READER_MAX_SIZE`, `POL_READER_VERIFY_SSL`.
+Gunicorn is installed from `requirements.txt`, so the app no longer falls back to
+the Django development server. `GUNICORN_WORKERS` (default `3`),
+`GUNICORN_THREADS` (default `4`) and `GUNICORN_TIMEOUT` (default `120`) tune it.
+Static files are served by WhiteNoise, and `frontend/start.sh` runs
+`collectstatic` before Gunicorn starts, so `/static/` keeps working without the
+Django development server.
+
+Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`, `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `POL_CACHE_BACKEND`, `POL_CACHE_DIR`, `POL_REDIS_URL`, `POL_READER_TIMEOUT`, `POL_READER_MAX_SIZE`, `POL_READER_VERIFY_SSL`.
 
 ### Access (port 8088)
 

@@ -17,6 +17,16 @@ service nginx start > /dev/null
 
 /usr/bin/python ./frontend/manage.py migrate 
 /usr/bin/python ./frontend/manage.py loaddata fields.json 
+/usr/bin/python ./frontend/manage.py collectstatic --noinput
 
 /usr/bin/python ./downloader.py &
-/usr/bin/python ./frontend/manage.py runserver
+
+# Production WSGI server. nginx proxies / to 127.0.0.1:8000.
+exec /usr/bin/python -m gunicorn frontend.wsgi:application \
+    --pythonpath ./frontend \
+    --bind 127.0.0.1:8000 \
+    --workers "${GUNICORN_WORKERS:-3}" \
+    --threads "${GUNICORN_THREADS:-4}" \
+    --timeout "${GUNICORN_TIMEOUT:-120}" \
+    --access-logfile - \
+    --error-logfile -
