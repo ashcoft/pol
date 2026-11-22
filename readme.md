@@ -183,23 +183,25 @@ The template forwards the browser `Host` header so Django's CSRF checks pass beh
 
 ## Docker
 
-The production image is published to GHCR:
-
-```bash
-docker pull ghcr.io/ashcoft/pol:latest
-```
-
-Run the published image with the bundled MySQL:
-
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
-cp .env.example .env      # edit the values
-docker compose pull
 docker compose up -d
 ```
 
-Build the image locally instead:
+That pulls `ghcr.io/ashcoft/pol:latest`, starts MySQL and the app, and serves
+on <http://localhost:8088>. With Compose v1, run `docker-compose up -d`.
+
+The defaults are meant for a first run. Copy `.env.example` to `.env` **before
+the first start** to change the database password, `SECRET_KEY`, public
+hostname and TLS origin:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+Build the image locally instead of pulling it:
 
 ```bash
 docker compose up -d --build
