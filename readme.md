@@ -279,8 +279,24 @@ If you never want the build fallback, use the pull-only production file:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-It has no `build:` section and uses `pull_policy: always`, so it always pulls
-the published image and fails explicitly if the registry is unavailable.
+It has no `build:` section and uses `POL_PULL_POLICY` (default `always`), so it
+pulls the published image and fails explicitly if the registry is unavailable.
+
+If you cannot use GHCR, build the image locally and reuse it with
+`POL_PULL_POLICY=never`:
+
+```bash
+docker compose up -d --build
+POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
+```
+
+Back up the local image so a removed container does not force a GHCR login:
+
+```bash
+docker save ghcr.io/ashcoft/pol:latest | gzip > pol-image.tar.gz
+# restore later
+gunzip -c pol-image.tar.gz | docker load
+```
 
 The stack starts two services:
 
@@ -317,6 +333,7 @@ Compose reads `.env` for these values:
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
 | `POL_VERSION` | `latest` | app image tag to pin in production |
+| `POL_PULL_POLICY` | `always` | pull policy for the production compose (`always` or `never`) |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
 | `SECRET_KEY` | `change-me-in-production` | set a long random value |
@@ -374,6 +391,10 @@ docker compose -f docker-compose.prod.yml up -d
 
 # database backup
 docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
+
+# image backup (for hosts that cannot pull from GHCR)
+docker save ghcr.io/ashcoft/pol:latest | gzip > pol-image.tar.gz
+gunzip -c pol-image.tar.gz | docker load
 ```
 
 ### Publishing the image (maintainers)
