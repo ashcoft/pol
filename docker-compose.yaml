@@ -1,6 +1,6 @@
 services:
   politepol:
-    image: ghcr.io/ashcoft/pol-feed:${POL_VERSION:-latest}
+    image: ghcr.io/ashcoft/pol:${POL_VERSION:-latest}
     build:
       context: .
     # `docker compose pull` fetches the published image; `--build` builds it

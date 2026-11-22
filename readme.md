@@ -133,7 +133,7 @@ The production image and CI are built and tested with:
 | Docker Compose | v2 (required) |
 
 The application version is 1.3.1. The `1.3.1` image predates the host-nginx
-layout, so `docker-compose.prod.yml` uses `ghcr.io/ashcoft/pol-feed:latest` until a
+layout, so `docker-compose.prod.yml` uses `ghcr.io/ashcoft/pol:latest` until a
 release containing this change is published. Set `POL_VERSION` in `.env` to pin
 that release tag. `docker-compose.yaml` also tracks `latest` for development.
 Python packages are pinned in
@@ -238,7 +238,7 @@ or IP before starting Django.
 
 ## Docker
 
-The production image is `ghcr.io/ashcoft/pol-feed:latest` until the next release.
+The production image is `ghcr.io/ashcoft/pol:latest` until the next release.
 Set `POL_VERSION` in `.env` to pin a release tag. `docker-compose.yaml` also
 uses `latest` for development.
 
@@ -255,7 +255,7 @@ cp .env.example .env      # optional; edit the values
 docker compose up -d
 ```
 
-Compose tries to pull `ghcr.io/ashcoft/pol-feed:latest` first. If the pull succeeds,
+Compose tries to pull `ghcr.io/ashcoft/pol:latest` first. If the pull succeeds,
 the image is used and nothing is built. If the pull fails (the package is
 private, you are not logged in, or the image is not published yet), Compose
 falls back to building the local `Dockerfile` because the service also has a
@@ -297,7 +297,7 @@ GHCR login:
 
 ```bash
 POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)
-docker save "ghcr.io/ashcoft/pol-feed:${POL_VERSION:-latest}" \
+docker save "ghcr.io/ashcoft/pol:${POL_VERSION:-latest}" \
   | gzip > /tmp/pol-image.tar.gz
 
 # restore later, then start without pulling
@@ -310,7 +310,7 @@ local image.
 
 The stack starts two services:
 
-* `politepol` - `ghcr.io/ashcoft/pol-feed:${POL_VERSION:-latest}`;
+* `politepol` - `ghcr.io/ashcoft/pol:${POL_VERSION:-latest}`;
   Gunicorn and the downloader in one container, running as the unprivileged
   `appuser`; publishes `127.0.0.1:8000` and `127.0.0.1:1234` on the host
 * `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume mounted
@@ -404,7 +404,7 @@ docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES
 
 # image backup (for hosts that cannot pull from GHCR)
 POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)
-docker save "ghcr.io/ashcoft/pol-feed:${POL_VERSION:-latest}" \
+docker save "ghcr.io/ashcoft/pol:${POL_VERSION:-latest}" \
   | gzip > /tmp/pol-image.tar.gz
 gunzip -c /tmp/pol-image.tar.gz | docker load
 POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
@@ -414,9 +414,9 @@ POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
 
 `.github/workflows/docker-publish.yml` runs on pushes to `main` and `v*` tags:
 
-- `ghcr.io/ashcoft/pol-feed:latest` on the default branch
-- `ghcr.io/ashcoft/pol-feed:sha-<short>` on every push
-- `ghcr.io/ashcoft/pol-feed:<version>` and `<major>.<minor>` for `v*` tags
+- `ghcr.io/ashcoft/pol:latest` on the default branch
+- `ghcr.io/ashcoft/pol:sha-<short>` on every push
+- `ghcr.io/ashcoft/pol:<version>` and `<major>.<minor>` for `v*` tags
 
 The package must be linked to the `ashcoft/pol` repository. If it is not, the
 workflow fails with `denied: permission_denied: read_package`. Link it in the
