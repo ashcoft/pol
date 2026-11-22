@@ -44,6 +44,7 @@ jobs:
       CSRF_TRUSTED_ORIGINS: http://127.0.0.1
       POL_READER_ALLOW_PRIVATE: '1'
       E2E_BASE_URL: http://127.0.0.1
+      RUN_E2E: '1'
     steps:
       - uses: actions/checkout@v7
 
@@ -86,10 +87,13 @@ jobs:
 
       - name: Start nginx
         run: |
+          sudo systemctl stop nginx 2>/dev/null || true
           sudo cp nginx/default.site-example /etc/nginx/sites-available/default
           sudo sed -i \
             -e 's/listen 80 default_server;/listen 127.0.0.1:80 default_server;/' \
             -e '/listen \[::\]:80/d' \
+            -e '/access_log \/dev\/stdout;/d' \
+            -e '/error_log \/dev\/stderr warn;/d' \
             /etc/nginx/sites-available/default
           sudo rm -f /etc/nginx/sites-enabled/default
           sudo ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
@@ -118,5 +122,7 @@ jobs:
           cat /tmp/web.log
           echo '--- downloader'
           cat /tmp/downloader.log
-          echo '--- nginx'
-          sudo tail -50 /var/log/nginx/error.log
+          echo '--- nginx error'
+          sudo tail -80 /var/log/nginx/error.log
+          echo '--- nginx access'
+          sudo tail -80 /var/log/nginx/access.log

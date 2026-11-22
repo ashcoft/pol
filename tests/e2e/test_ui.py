@@ -19,11 +19,11 @@ FEED = """<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0">
   <channel>
     <title>Example feed</title>
-    <link>https://example.com/</link>
+    <link>{base}/</link>
     <description>Example</description>
     <item>
       <title>First post</title>
-      <link>https://example.com/first</link>
+      <link>{base}/article</link>
       <description>Hello from the fixture.</description>
     </item>
   </channel>
@@ -42,6 +42,14 @@ def browser():
 @pytest.fixture
 def page(browser):
     context = browser.new_context()
+
+    def _route(route):
+        if route.request.url.startswith(BASE_URL):
+            route.continue_()
+        else:
+            route.abort()
+
+    context.route('**/*', _route)
     page = context.new_page()
     yield page
     context.close()
@@ -54,7 +62,11 @@ def _serve_discovery(http_server):
               '<link rel="alternate" type="application/rss+xml" '
               'title="Example feed" href="/feed.xml">'
               '</head><body>hello</body></html>'),
-        '/feed.xml': (200, {'Content-Type': 'application/rss+xml'}, FEED),
+        '/feed.xml': (200, {'Content-Type': 'application/rss+xml'},
+                      FEED.format(base=http_server.base_url)),
+        '/article': (200, {'Content-Type': 'text/html'},
+                     '<html><body><h1>First post</h1>'
+                     '<p>Local article for the preview.</p></body></html>'),
     })
 
 
@@ -101,3 +113,5 @@ def test_no_feed_opens_the_builder(page, http_server):
     page.fill('input[name="url"]', http_server.base_url)
     page.click('input[type="submit"]')
     page.wait_for_url(re.compile(r'/setup\?url='))
+    expect(page.locator('#setup-tool-string')).to_be_visible()
+    expect(page.locator('#st-title')).to_be_visible()
