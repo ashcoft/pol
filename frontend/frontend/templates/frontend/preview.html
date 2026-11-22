@@ -27,6 +27,7 @@
   <div id="preview" class="well" style="margin-bottom: 60px">
     {% trans 'subscribe.loading' %}
   </div>
+  <script src="{% static 'frontend/js/preview.js' %}"></script>
   <script type="text/javascript">
       function tryGetFeed() {
           $.getFeed({
@@ -35,26 +36,7 @@
                   if ('items' in feed) {
                       $('#preview').empty()
                               .append($('<h3 style="margin-top: 0;"></h3>').append("{% trans 'subscribe.preview' %}: "));
-                      /*.append($('<div></div>').append($('<a/>').attr('href', feed.link).attr('target', '_blank').text(feed.title)))*/
-
-                      var html = '';
-
-                      for (var i = 0; i < feed.items.length; i++) {
-
-                          var item = feed.items[i];
-
-                          $('#preview').append('<h4>'
-                                  + '<a href="'
-                                  + item.link
-                                  + '">'
-                                  + (item.title ? item.title : item.link)
-                                  + '</a>'
-                                  + '</h4>');
-
-                          $('#preview').append('<div>'
-                                  + item.description
-                                  + '</div>');
-                      }
+                      PolPreview.renderItems(document.getElementById('preview'), feed, document);
                   }
                   else {
                       $('#preview').text('No items.');

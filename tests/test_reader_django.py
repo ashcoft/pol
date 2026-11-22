@@ -82,3 +82,21 @@ def test_contact_links_to_github_and_has_no_email():
     assert response.status_code == 200
     assert b'github.com/ashcoft' in response.content
     assert b'politepol.com@gmail.com' not in response.content
+
+
+@override_settings(**TEST_SETTINGS)
+def test_index_has_no_rails_template_markup():
+    response = Client().get('/en/')
+    html = response.content.decode('utf-8')
+    assert response.status_code == 200
+    assert '<%=' not in html
+    assert 'content_for?' not in html
+
+
+@override_settings(**TEST_SETTINGS)
+def test_preview_page_only_links_http_urls():
+    response = Client().get('/en/preview/2')
+    html = response.content.decode('utf-8')
+    assert response.status_code == 200
+    assert 'frontend/js/preview.js' in html
+    assert 'PolPreview.renderItems' in html
