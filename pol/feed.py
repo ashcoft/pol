@@ -38,8 +38,184 @@ def _as_text(value):
     return value.decode('utf-8') if isinstance(value, bytes) else value
 
 
+# XML 1.0 cannot represent these code points. feedgenerator raises on C0
+# controls, and a lone surrogate or non-character produces output no XML
+# parser accepts, so drop them before serialising the feed.
+_XML_INVALID_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
+_URL_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):', re.IGNORECASE)
+# Browsers strip leading/trailing C0 controls and spaces and remove tabs,
+# newlines and carriage returns throughout a URL. Interior spaces are kept,
+# so a relative path like `Chapter 1: Introduction.html` must stay relative.
+_URL_EDGE_CONTROL_RE = re.compile(r'^[\x00-\x20\x7f]+|[\x00-\x20\x7f]+$')
+_URL_INTERNAL_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f]')
+_URL_ATTRS = frozenset({
+    'href', 'src', 'poster', 'action', 'background',
+    'data-src', 'data-original', 'data-lazy-src',
+})
+
+
+def _xml_text(value):
+    if value is None:
+        return ''
+    return _XML_INVALID_RE.sub('', _as_text(value))
+
+
+def _url_scheme(value):
+    cleaned = _URL_EDGE_CONTROL_RE.sub('', _as_text(value or ''))
+    cleaned = _URL_INTERNAL_CONTROL_RE.sub('', cleaned)
+    match = _URL_SCHEME_RE.match(cleaned)
+    return match.group(1).lower() if match else ''
+
+
+def _safe_url(value):
+    """Return value only when it is an absolute http(s) URL."""
+    value = (value or '').strip()
+    if _url_scheme(value) not in ('http', 'https'):
+        return ''
+    try:
+        parts = six.moves.urllib.parse.urlsplit(value)
+    except ValueError:
+        return ''
+    return value if parts.netloc else ''
+
+
+def _usable_url(value):
+    """Accept http(s) URLs and relative references, reject file:/javascript:/data:."""
+    value = (value or '').strip()
+    if _url_scheme(value):
+        return bool(_safe_url(value))
+    return not value.lower().startswith(('javascript:', 'data:', 'vbscript:'))
+
+
+def _parse_srcset(value):
+    """Yield ``(url, descriptor)`` pairs using HTML srcset candidate boundaries."""
+    text = _as_text(value or '')
+    position = 0
+    length = len(text)
+    while position < length:
+        while position < length and (text[position].isspace() or text[position] == ','):
+            position += 1
+        if position >= length:
+            break
+
+        start = position
+        while position < length and not text[position].isspace():
+            position += 1
+        raw_url = text[start:position]
+        url = raw_url.rstrip(',')
+        if not url:
+            continue
+
+        if raw_url.endswith(','):
+            # The comma ended this candidate, so it has no descriptor.
+            descriptor = ''
+        else:
+            descriptor_start = position
+            depth = 0
+            while position < length:
+                char = text[position]
+                if char == '(':
+                    depth += 1
+                elif char == ')' and depth:
+                    depth -= 1
+                elif char == ',' and not depth:
+                    break
+                position += 1
+            descriptor = text[descriptor_start:position].strip()
+            if position < length and text[position] == ',':
+                position += 1
+
+        yield url, descriptor
+
+
+def _sanitize_srcset(value):
+    candidates = []
+    for url, descriptor in _parse_srcset(value):
+        if _usable_url(url):
+            candidates.append((url + ' ' + descriptor).strip())
+    return ', '.join(candidates)
+
+
+def _sanitize_urls(fragment):
+    """Strip event handlers and non-http(s) URLs from description markup."""
+    if not fragment or '<' not in fragment:
+        return fragment
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError, TypeError):
+        return fragment
+
+    changed = False
+    for element in root.iter():
+        for attr in list(element.attrib):
+            lowered = attr.lower()
+            if lowered.startswith('on') or lowered == 'srcdoc':
+                del element.attrib[attr]
+                changed = True
+            elif lowered == 'srcset':
+                value = _sanitize_srcset(element.get(attr))
+                if value:
+                    element.set(attr, value)
+                else:
+                    del element.attrib[attr]
+                changed = True
+            elif lowered in _URL_ATTRS:
+                value = element.get(attr) or ''
+                if _usable_url(value):
+                    continue
+                del element.attrib[attr]
+                changed = True
+    if not changed:
+        return fragment
+    return html.escape(root.text or '') + ''.join(
+        etree.tostring(child, encoding='unicode', method='html') for child in root)
+
+
 def _normalize_images(fragment, base_url):
     """Give lazy-loaded and relative <img> tags a usable absolute src."""
+    if '<img' not in fragment:
+        return fragment
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError):
+        return fragment
+    changed = False
+    for img in root.iter('img'):
+        src = img.get('src') or ''
+        lazy_src = img.get('data-src') or img.get('data-original') or img.get('data-lazy-src')
+        if lazy_src and (not src or src.lower().startswith('data:')):
+            src = lazy_src
+            img.set('src', src)
+            changed = True
+        if src and base_url and not re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', src, re.I):
+            try:
+                src = six.moves.urllib.parse.urljoin(base_url, src)
+            except ValueError:
+                src = ''
+            if src:
+                img.set('src', src)
+            else:
+                img.attrib.pop('src', None)
+            changed = True
+        if src and not _usable_url(src):
+            del img.attrib['src']
+            changed = True
+        if 'loading' in img.attrib:
+            del img.attrib['loading']
+            changed = True
+    if not changed:
+        return fragment
+    return html.escape(root.text or '') + ''.join(
+        etree.tostring(child, encoding='unicode', method='html') for child in root)
+
+
+def _legacy_normalize_images(fragment, base_url):
+    """Pre-sanitizer image normalization, kept only for stable fallback GUIDs.
+
+    Do not add URL filtering, text escaping or a case-insensitive ``data:``
+    check here: existing link-less posts were identified by this exact output,
+    so changing it republishes them.
+    """
     if '<img' not in fragment:
         return fragment
     try:
@@ -55,7 +231,10 @@ def _normalize_images(fragment, base_url):
             img.set('src', src)
             changed = True
         if src and base_url and not re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', src, re.I):
-            img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            try:
+                img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            except ValueError:
+                return fragment
             changed = True
         if 'loading' in img.attrib:
             del img.attrib['loading']
@@ -94,7 +273,10 @@ def _as_utc(value):
 
 
 def _image_mime(url):
-    path = six.moves.urllib.parse.urlsplit(url).path
+    try:
+        path = six.moves.urllib.parse.urlsplit(url).path
+    except ValueError:
+        return 'image/jpeg'
     mime, _ = mimetypes.guess_type(path)
     return mime if mime and mime.startswith('image/') else 'image/jpeg'
 
@@ -191,8 +373,18 @@ class Feed(object):
         return scheme in ('', 'http', 'https')
 
     def _build_link(self, html, doc_url, url):
-        base_url = w3lib.html.get_base_url(html, doc_url)
-        return six.moves.urllib.parse.urljoin(base_url, url)
+        url = _xml_text(url)
+        if not url:
+            return ''
+        try:
+            base_url = w3lib.html.get_base_url(html, doc_url)
+        except ValueError:
+            base_url = doc_url
+        try:
+            resolved = six.moves.urllib.parse.urljoin(base_url, url)
+        except ValueError:
+            return ''
+        return resolved if _usable_url(resolved) else ''
 
     def buildFeed(self, selector, page_unicode, feed_config):
         selector.remove_namespaces()
@@ -222,7 +414,7 @@ class Feed(object):
                         value = self._build_link(page_unicode, feed_config['uri'], value)
 
                 if value:
-                    item[field_name] = value
+                    item[field_name] = _xml_text(value)
                     if required:
                         required_found += 1
 
@@ -232,45 +424,65 @@ class Feed(object):
         title = selector.xpath('//title/text()').extract_first()
 
         #build feed
+        feed_uri = _xml_text(feed_config['uri'])
         feed = Rss201rev2Feed(
-            title = title if title else 'PolitePol: ' + feed_config['uri'],
-            link=feed_config['uri'],
-            description="Generated by PolitePol.\n"+\
-                "Source page: " + feed_config['uri'],
-            language="en",
+            title = _xml_text(title) if title else 'PolitePol: ' + feed_uri,
+            link = feed_uri,
+            description = _xml_text("Generated by PolitePol.\n" +
+                "Source page: " + feed_uri),
+            language = "en",
         )
         new_post_cnt = self.fill_time(feed_config['id'], items)
 
-        base_url = w3lib.html.get_base_url(page_unicode, feed_config['uri'])
+        try:
+            base_url = w3lib.html.get_base_url(page_unicode, feed_config['uri'])
+        except ValueError:
+            base_url = feed_config['uri']
 
         for item in items:
             title = item['title'] if 'title' in item else ''
-            title = re.sub(r'<[^>]+>', '', title).strip()
-            desc = item['description'] if 'description' in item else ''
-            desc = _normalize_images(desc, base_url)
+            title = _xml_text(re.sub(r'<[^>]+>', '', title)).strip()
+            raw_desc = item['description'] if 'description' in item else ''
+            desc = _xml_text(_sanitize_urls(_normalize_images(raw_desc, base_url)))
+            # Keep the fallback GUID on the legacy description pipeline. Only
+            # the published description is sanitized, so a sanitizer change
+            # does not make readers treat an old post as new.
+            try:
+                legacy_desc = _legacy_normalize_images(raw_desc, base_url)
+            except ValueError:
+                legacy_desc = raw_desc
             image = item.get('image')
             if image:
                 image = self._build_link(page_unicode, feed_config['uri'], image)
-                if image not in desc:
-                    desc = '<img src="%s" alt="" />' % html.escape(image) + desc
+                # Only absolute http(s) images can become enclosures.
+                if not _safe_url(image):
+                    image = ''
+                else:
+                    if image not in legacy_desc:
+                        legacy_desc = ('<img src="%s" alt="" />' % html.escape(image)
+                                       + legacy_desc)
+                    if image not in desc:
+                        desc = ('<img src="%s" alt="" />'
+                                % html.escape(image, quote=True) + desc)
             time = (_parse_date(item.get('date')) or _as_utc(item.get('time'))
                     or datetime.datetime.now(datetime.timezone.utc))
             if 'link' in item:
-                link = item['link']
+                link = _xml_text(item['link'])
+                if not _usable_url(link):
+                    link = ''
             else:
                 # md5 keeps published identities of link-less items stable.
-                identity = title + desc
+                identity = _xml_text(title + legacy_desc)
                 if not identity:
-                    identity = (item.get('date') or '') + (item.get('image') or '')
+                    identity = _xml_text((item.get('date') or '') + (item.get('image') or ''))
                 fragment = md5(identity.encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
-                link = self.url_hash_regexp.sub('#' + fragment, feed_config['uri'])
+                link = self.url_hash_regexp.sub('#' + fragment, feed_uri)
             feed.add_item(
                 title = title,
                 link = link,
                 unique_id = link,
                 description = desc,
                 enclosures=[Enclosure(image, '0', _image_mime(image))] if image else (),
-                #enclosure=Enclosure(fields[4], "32000", "image/jpeg") if  4 in fields else None, #"Image"
                 pubdate = time
             )
         return [feed.writeString('utf-8'), len(items), new_post_cnt]
