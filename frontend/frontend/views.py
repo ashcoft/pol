@@ -9,10 +9,10 @@ from django.db.models import Count
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import (
     HttpResponseRedirect, HttpResponse, HttpResponseBadRequest,
-    HttpResponseForbidden, HttpResponseNotAllowed)
+    HttpResponseNotAllowed)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.core.validators import URLValidator
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -73,7 +73,7 @@ def _deny_feed_access(request):
         login_url = reverse('login') + '?' + urllib.parse.urlencode(
             {'next': request.path})
         return HttpResponseRedirect(login_url)
-    return HttpResponseForbidden(_('You cannot manage this feed.'))
+    raise PermissionDenied(_('You cannot manage this feed.'))
 
 
 def _claim_session_feeds(request, user):
@@ -430,7 +430,7 @@ def delete_feed(request, feed_id):
     # Deleting an unclaimed legacy feed is not allowed. A user must claim it
     # through the edit page first.
     if not _can_manage(request, feed):
-        return HttpResponseForbidden(_('You cannot delete this feed.'))
+        raise PermissionDenied(_('You cannot delete this feed.'))
     feed.delete()
     return redirect('myfeeds')
 
