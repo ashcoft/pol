@@ -64,6 +64,25 @@ test('htmlToText skips noscript fallback text', () => {
     );
 });
 
+test('htmlToText keeps inline formatting adjacent', () => {
+    assert.equal(htmlToText('<b>Hello</b>, world'), 'Hello, world');
+    assert.equal(htmlToText('<p>$<strong>19</strong>.99</p>'), '$19.99');
+});
+
+test('htmlToText skips HTML comments', () => {
+    assert.equal(
+        htmlToText("<p>Read <!-- Publisher's note -->the full story.</p>"),
+        'Read the full story.'
+    );
+});
+
+test('htmlToText skips template content', () => {
+    assert.equal(
+        htmlToText('<div><template><p>Loading…</p></template><p>Actual story</p></div>'),
+        'Actual story'
+    );
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +

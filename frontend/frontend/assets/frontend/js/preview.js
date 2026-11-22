@@ -62,20 +62,54 @@
             });
     }
 
-    function stripDangerousBlocks(value) {
-        return String(value || '').replace(
-            /<(script|style|noscript|iframe|object|embed)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
-            ' ');
+    var HIDDEN_TAGS = ['script', 'style', 'noscript', 'template',
+        'iframe', 'object', 'embed'];
+    var BLOCK_TAGS = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'section', 'article',
+        'header', 'footer', 'ul', 'ol', 'table', 'tbody', 'thead', 'tfoot',
+        'figure', 'figcaption', 'dl', 'dt', 'dd', 'address', 'aside',
+        'main', 'nav', 'form', 'fieldset', 'hr'];
+    var VOID_TAGS = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img',
+        'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+
+    function inList(list, value) {
+        return list.indexOf(value) !== -1;
     }
 
-    function stripTags(value) {
+    function htmlToText(value) {
+        if (!value) {
+            return '';
+        }
+        var source = String(value);
         var text = '';
-        var inTag = false;
-        var quote = '';
-        var tagStart = 0;
-        for (var index = 0; index < value.length; index++) {
-            var char = value.charAt(index);
-            if (inTag) {
+        var length = source.length;
+        var index = 0;
+        var hiddenDepth = 0;
+        var hiddenName = '';
+        var hiddenNesting = 0;
+
+        while (index < length) {
+            var lt = source.indexOf('<', index);
+            if (lt === -1) {
+                if (!hiddenDepth) {
+                    text += source.slice(index);
+                }
+                break;
+            }
+            if (lt > index && !hiddenDepth) {
+                text += source.slice(index, lt);
+            }
+
+            if (source.substr(lt, 4) === '<!--') {
+                var commentEnd = source.indexOf('-->', lt + 4);
+                index = commentEnd === -1 ? length : commentEnd + 3;
+                continue;
+            }
+
+            var quote = '';
+            var pos = lt + 1;
+            while (pos < length) {
+                var char = source.charAt(pos);
                 if (quote) {
                     if (char === quote) {
                         quote = '';
@@ -83,31 +117,48 @@
                 } else if (char === '"' || char === "'") {
                     quote = char;
                 } else if (char === '>') {
-                    inTag = false;
-                    text += ' ';
+                    break;
                 }
-            } else if (char === '<') {
-                inTag = true;
-                tagStart = index;
-            } else {
-                text += char;
+                pos++;
             }
-        }
-        if (inTag) {
-            text += value.slice(tagStart);
-        }
-        return text;
-    }
+            if (pos >= length) {
+                if (!hiddenDepth) {
+                    text += source.slice(lt);
+                }
+                break;
+            }
 
-    function htmlToText(value) {
-        if (!value) {
-            return '';
+            var raw = source.slice(lt + 1, pos).trim();
+            var closing = raw.charAt(0) === '/';
+            var selfClosing = raw.charAt(raw.length - 1) === '/';
+            var body = closing ? raw.slice(1) : raw;
+            var name = body.trim().split(/\s+/)[0]
+                .toLowerCase().replace(/\/$/, '');
+            var voidTag = inList(VOID_TAGS, name);
+
+            if (hiddenDepth) {
+                if (name === hiddenName) {
+                    if (closing) {
+                        hiddenNesting -= 1;
+                        if (hiddenNesting === 0) {
+                            hiddenDepth = 0;
+                        }
+                    } else if (!selfClosing && !voidTag) {
+                        hiddenNesting += 1;
+                    }
+                }
+            } else if (!closing && inList(HIDDEN_TAGS, name) && !voidTag) {
+                hiddenDepth = 1;
+                hiddenName = name;
+                hiddenNesting = 1;
+            } else if (name === 'br' || inList(BLOCK_TAGS, name)) {
+                text += ' ';
+            }
+
+            index = pos + 1;
         }
-        // Work on the string, never on live DOM: block and cell tags become
-        // spaces, dangerous blocks are removed, and the result is only ever
-        // assigned to textContent.
-        return decodeEntities(stripTags(stripDangerousBlocks(value)))
-            .replace(/\s+/g, ' ').trim();
+
+        return decodeEntities(text).replace(/\s+/g, ' ').trim();
     }
 
     function imageUrls(value) {
