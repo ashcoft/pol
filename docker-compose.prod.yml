@@ -3,7 +3,7 @@
 services:
   politepol:
     image: ghcr.io/ashcoft/pol:latest
-    pull_policy: ${POL_PULL_POLICY:-missing}
+    pull_policy: always
     environment:
       DB_NAME: '${DB_NAME:-pol}'
       DB_USER: '${DB_USER:-pol}'
@@ -47,7 +47,7 @@ services:
     networks:
       - politepol-network
     volumes:
-      - pol_pg:/var/lib/postgresql/data
+      - pol_pg:/var/lib/postgresql
 
 volumes:
   pol_pg:

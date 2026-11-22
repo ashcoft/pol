@@ -123,12 +123,12 @@ when Redis is unavailable.
 
 The production image and CI are built and tested with:
 
-| Component | Pinned version |
+| Component | Version / requirement |
 | --- | --- |
 | Python | 3.15 (`python:3.15-slim`) |
 | Django | 6.1.3 |
 | PostgreSQL | 19 (`postgres:19`) |
-| nginx | 1.26.x (Debian trixie package inside the image) |
+| nginx | 1.26.x from the Debian trixie base image (not pinned) |
 | Gunicorn | 27.0.1 |
 | WhiteNoise | 6.12.0 |
 | psycopg | 3.3.9 (`psycopg[binary]`) |
@@ -136,12 +136,12 @@ The production image and CI are built and tested with:
 | Twisted | 26.10.0 |
 | lxml | 6.1.3 |
 | Redis (optional cache) | 8.1.0 |
-| Docker Compose | v2 |
+| Docker Compose | v2 (required) |
 
 Python packages are pinned in `requirements.txt`. The Dockerfile pins the Python
-base image, and `docker-compose.yaml` pins `postgres:19`. nginx comes from the
-Debian package inside `python:3.15-slim` (currently 1.26.x). Pin image digests as
-well if you need byte-for-byte reproducible builds.
+base image tag, and both compose files pin `postgres:19`. nginx comes from the
+Debian package inside `python:3.15-slim` and is not pinned; pin the base image
+digest if you need byte-for-byte reproducible builds.
 
 System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
@@ -185,7 +185,9 @@ createdb pol    # or: psql -U postgres -c 'CREATE DATABASE pol;'
 
 If your local PostgreSQL differs from the settings defaults, export `DB_NAME`,
 `DB_USER`, `DB_PASSWORD`, `DB_HOST` and `DB_PORT` before running the servers.
-The defaults are `pol` / `postgres` / `postgres` on `127.0.0.1:5432`.
+The non-Docker settings defaults are `pol` / `postgres` / `postgres` on
+`127.0.0.1:5432`. `.env.example` is the Docker template and uses `pol` / `pol` /
+`change-me`.
 
 Initialise the database:
 
@@ -255,13 +257,14 @@ If you never want the build fallback, use the pull-only production file:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-It has no `build:` section, so Compose can only pull the published image.
+It has no `build:` section and uses `pull_policy: always`, so it always pulls
+the published image and fails explicitly if the registry is unavailable.
 
 The GHCR package is private by default. Log in once with a token that has
 `read:packages`:
 
 ```bash
-echo "$GHCR_TOKEN" | docker login ghcr.io -u ashcoft --password-stdin
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <your-github-username> --password-stdin
 docker compose pull
 docker compose up -d
 ```
@@ -274,7 +277,8 @@ The stack starts two services:
 * `politepol` - `ghcr.io/ashcoft/pol:latest`; nginx, Gunicorn and the downloader
   in one container, running as the unprivileged `appuser`; HTTP on `WEB_PORT`
   (default `8088`)
-* `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume
+* `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume mounted
+  at `/var/lib/postgresql`
 
 At start, `frontend/start.sh` waits for PostgreSQL, patches nginx's listen port,
 runs `migrate` and `loaddata`, then starts the downloader, nginx and Gunicorn.
@@ -284,6 +288,11 @@ runs `migrate` and `loaddata`, then starts the downloader, nginx and Gunicorn.
 Compose fixes `DB_HOST=dbpolitepol` and `DB_PORT=5432`; PostgreSQL always listens
 on 5432 inside the container. The app's settings still read `DB_HOST`/`DB_PORT`
 for non-Docker runs.
+
+PostgreSQL 19 stores its cluster under `/var/lib/postgresql/19/docker`, so the
+`pol_pg` volume is mounted at `/var/lib/postgresql`, the layout the official
+image expects. If you have data from an older `/var/lib/postgresql/data` mount,
+dump it and restore it into a fresh volume before switching.
 
 Compose reads `.env` for these values:
 
@@ -348,7 +357,7 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
 # database backup
-docker compose exec dbpolitepol pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > pol.sql
+docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
 ```
 
 ### Publishing the image (maintainers)
@@ -368,7 +377,7 @@ workflow. Packages are private by default.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `docker compose up` starts a build | GHCR pull failed (private package, not logged in, or not published) | `docker login ghcr.io`, then `docker compose pull`; or use `--build` for a local build |
+| `docker compose up` starts a build (using `docker-compose.yaml`) | GHCR pull failed (private package, not logged in, or not published) | `docker login ghcr.io`, then `docker compose pull`; or use `--build` for a local build |
 | `Head ... unauthorized` on pull | Private package and no login | Log in with a `read:packages` token |
 | `permission_denied: read_package` in Actions | Package is not linked to the repository | Link the package in its settings and re-run the workflow |
 | App waits for the database and exits | PostgreSQL not ready or wrong credentials | `docker compose logs dbpolitepol`; check `DB_*` in `.env` |

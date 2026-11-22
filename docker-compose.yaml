@@ -49,7 +49,7 @@ services:
     networks:
       - politepol-network
     volumes:
-      - pol_pg:/var/lib/postgresql/data
+      - pol_pg:/var/lib/postgresql
 
 volumes:
   pol_pg:
