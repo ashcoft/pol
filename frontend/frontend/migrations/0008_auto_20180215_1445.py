@@ -5,6 +5,18 @@ from __future__ import unicode_literals
 from django.db import migrations, models
 
 
+def hex_to_bytes(apps, schema_editor):
+    Post = apps.get_model('frontend', 'Post')
+    for post in Post.objects.all().iterator():
+        value = post.md5sum
+        if isinstance(value, str):
+            try:
+                post.md5sum2 = bytes.fromhex(value)
+            except ValueError:
+                post.md5sum2 = b''
+            post.save(update_fields=['md5sum2'])
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -12,16 +24,34 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL("ALTER TABLE `frontend_post` ADD COLUMN `md5sum2` BINARY(16) DEFAULT 0 NOT NULL;"
-                          "UPDATE `frontend_post` set `md5sum2` = unhex(`md5sum`);"
-                          "ALTER TABLE frontend_post DROP COLUMN md5sum;"
-                          "ALTER TABLE frontend_post CHANGE COLUMN md5sum2 md5sum BINARY(16) NOT NULL;"
-                          "CREATE INDEX md5sum_index USING HASH ON frontend_post (feed_id, md5sum);", # hash works in MEMORY engine
-                          state_operations=[
-                              migrations.AlterField(
-                                  model_name='post',
-                                  name='md5sum',
-                                  field=models.BinaryField(),
-                              ),
-                          ]),
+        migrations.AddField(
+            model_name='post',
+            name='md5sum2',
+            field=models.BinaryField(max_length=16, null=True),
+        ),
+        migrations.RunPython(hex_to_bytes, migrations.RunPython.noop),
+        migrations.RemoveField(
+            model_name='post',
+            name='md5sum',
+        ),
+        migrations.RenameField(
+            model_name='post',
+            old_name='md5sum2',
+            new_name='md5sum',
+        ),
+        migrations.AlterField(
+            model_name='post',
+            name='md5sum',
+            field=models.BinaryField(max_length=16),
+        ),
+        # 0009 records this index in the migration state.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.AddIndex(
+                    model_name='post',
+                    index=models.Index(fields=['feed', 'md5sum'], name='md5sum_index'),
+                ),
+            ],
+            state_operations=[],
+        ),
     ]

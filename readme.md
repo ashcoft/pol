@@ -104,11 +104,11 @@ when Redis is unavailable.
 ## Requirements
 
 * Python 3.12+ (3.15 recommended, used by CI and Docker)
-* MySQL 5.7+ (used by both the frontend and the downloader)
-* System build dependencies for `mysqlclient`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
+* PostgreSQL 13+ (used by both the frontend and the downloader)
+* System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
 ```bash
-sudo apt-get install build-essential pkg-config default-libmysqlclient-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev gettext
+sudo apt-get install build-essential pkg-config libpq-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev gettext
 ```
 
 Optional, only if you rely on Django Pipeline's LESS/SASS compilation instead of prebuilt assets:
@@ -129,7 +129,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-pip install mysqlclient pytest
+pip install pytest
 ```
 
 Create the Django settings module (the repo expects `settings.py` next to the `frontend` package; it is git-ignored):
@@ -141,7 +141,7 @@ cp frontend/frontend/settings.py.example frontend/frontend/settings.py
 Create the database:
 
 ```bash
-mysql -uroot -p -e 'CREATE DATABASE pol DEFAULT CHARACTER SET utf8mb4 DEFAULT COLLATE utf8mb4_unicode_ci;'
+createdb pol    # or: psql -U postgres -c 'CREATE DATABASE pol;'
 ```
 
 Initialise the database:
@@ -189,7 +189,7 @@ cd pol
 docker compose up -d
 ```
 
-That pulls `ghcr.io/ashcoft/pol:latest`, starts MySQL and the app, and serves
+That pulls `ghcr.io/ashcoft/pol:latest`, starts PostgreSQL and the app, and serves
 on <http://localhost:8088>. With Compose v1, run `docker-compose up -d`.
 
 The defaults are meant for a first run. Copy `.env.example` to `.env` **before
@@ -211,11 +211,12 @@ The stack starts two services:
 
 * `politepol` - nginx, Gunicorn (the Django WSGI app) and the downloader in one
   container; serves HTTP on `WEB_PORT` (default `8088`)
-* `dbpolitepol` - MySQL, with its data in the `pol_mysql` volume
+* `dbpolitepol` - PostgreSQL, with its data in the `pol_pg` volume
 
-At start, `frontend/start.sh` waits for MySQL, generates `settings.py` from the
-environment, patches nginx's listen port, runs migrations, loads `fields.json`,
-runs `collectstatic`, then starts the downloader, nginx and Gunicorn. Gunicorn
+At start, `frontend/start.sh` waits for PostgreSQL, generates `settings.py`
+from the environment, patches nginx's listen port, runs migrations and loads
+`fields.json`, then starts the downloader, nginx and Gunicorn. `collectstatic`
+runs during the image build. Gunicorn
 is installed from `requirements.txt`, so the app never falls back to the Django
 development server. Static files are served by WhiteNoise.
 
@@ -226,7 +227,7 @@ Compose reads `.env` for these values:
 | `DB_NAME` | `pol` | database name |
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
-| `DB_ROOT_PASSWORD` | `root-change-me` | MySQL root password |
+| `DB_PORT` | `5432` | database port |
 | `WEB_PORT` | `8088` | public HTTP port |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
@@ -241,7 +242,6 @@ Example `.env` for a public HTTPS site:
 
 ```dotenv
 DB_PASSWORD=change-me
-DB_ROOT_PASSWORD=root-change-me
 WEB_PORT=8088
 DEBUG=False
 SECRET_KEY=put-a-long-random-value-here
@@ -280,7 +280,7 @@ docker compose pull
 docker compose up -d
 
 # database backup
-docker compose exec dbpolitepol mysqldump -u root -p"$DB_ROOT_PASSWORD" "$DB_NAME" > pol.sql
+docker compose exec dbpolitepol pg_dump -U "$DB_USER" "$DB_NAME" > pol.sql
 ```
 
 The `Publish Docker image` workflow builds and pushes

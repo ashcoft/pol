@@ -7,12 +7,6 @@ import pytest
 
 django = pytest.importorskip('django')
 
-try:
-    import MySQLdb  # noqa: F401
-except ImportError:  # local runs without mysqlclient
-    pymysql = pytest.importorskip('pymysql')
-    pymysql.install_as_MySQLdb()
-
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 try:
     django.setup()

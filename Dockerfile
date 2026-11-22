@@ -9,7 +9,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         pkg-config \
-        default-libmysqlclient-dev \
+        libpq-dev \
         libxml2-dev \
         libxslt1-dev \
         libffi-dev \
@@ -20,7 +20,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/venv/bin/pip install -r requirements.txt mysqlclient
+    && /opt/venv/bin/pip install -r requirements.txt
 
 
 FROM python:3.15-slim AS runtime
@@ -35,15 +35,17 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         nginx \
-        libmariadb3 \
+        libpq5 \
         libxml2 \
         libxslt1.1 \
         curl \
         ca-certificates \
-        util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default \
-    && useradd --create-home --uid 1000 appuser
+    && useradd --create-home --uid 1000 appuser \
+    && mkdir -p /tmp/nginx/conf.d /tmp/nginx/client_body /tmp/nginx/proxy \
+        /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi \
+    && chown -R appuser:appuser /tmp/nginx
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
@@ -51,8 +53,11 @@ COPY . .
 
 RUN cp frontend/frontend/settings.py.example frontend/frontend/settings.py \
     && cp nginx/default.site-example /etc/nginx/sites-available/default \
-    && ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default \
-    && chmod +x frontend/start.sh wait-for-it.sh
+    && cp nginx/nginx.conf /etc/nginx/nginx.conf \
+    && chmod +x frontend/start.sh wait-for-it.sh \
+    && python frontend/manage.py collectstatic --noinput
+
+USER appuser
 
 EXPOSE 8088
 
