@@ -196,3 +196,111 @@ msgstr "Xpath даты"
 
 msgid "setup.image_xpath"
 msgstr "Xpath изображения"
+
+msgid "My feeds"
+msgstr "Мои ленты"
+
+msgid "Sign out"
+msgstr "Выйти"
+
+msgid "Sign up"
+msgstr "Регистрация"
+
+msgid "Log in"
+msgstr "Войти"
+
+msgid "Edit feed"
+msgstr "Редактировать ленту"
+
+msgid "Delete this feed?"
+msgstr "Удалить эту ленту?"
+
+msgid "These feeds are stored in this browser session."
+msgstr "Эти ленты хранятся в этой сессии браузера."
+
+msgid "Create an account"
+msgstr "Создать аккаунт"
+
+msgid "or"
+msgstr "или"
+
+msgid "log in"
+msgstr "войти"
+
+msgid "to keep them."
+msgstr "чтобы сохранить их."
+
+msgid "ID"
+msgstr "ID"
+
+msgid "Page"
+msgstr "Страница"
+
+msgid "Fields"
+msgstr "Поля"
+
+msgid "Created"
+msgstr "Создано"
+
+msgid "Preview"
+msgstr "Предпросмотр"
+
+msgid "Edit"
+msgstr "Редактировать"
+
+msgid "Delete"
+msgstr "Удалить"
+
+msgid "You have no feeds yet."
+msgstr "У вас пока нет лент."
+
+msgid "Create your first feed"
+msgstr "Создайте первую ленту"
+
+msgid "Source page:"
+msgstr "Исходная страница:"
+
+msgid "Field selectors"
+msgstr "Селекторы полей"
+
+msgid "Leave a selector empty to drop that field from the feed. At least one field is required."
+msgstr "Оставьте селектор пустым, чтобы убрать это поле из ленты. Нужно указать хотя бы одно поле."
+
+msgid "Save changes"
+msgstr "Сохранить изменения"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Back to my feeds"
+msgstr "Назад к моим лентам"
+
+msgid "Create account"
+msgstr "Создать аккаунт"
+
+msgid "I already have an account"
+msgstr "У меня уже есть аккаунт"
+
+msgid "Page URL"
+msgstr "URL страницы"
+
+msgid "Post xpath"
+msgstr "Xpath поста"
+
+msgid "Invalid XPath"
+msgstr "Неверный XPath"
+
+msgid "This URL is not allowed."
+msgstr "Этот URL не разрешён."
+
+msgid "Select at least one feed field."
+msgstr "Выберите хотя бы одно поле ленты."
+
+msgid "You cannot manage this feed."
+msgstr "Вы не можете управлять этой лентой."
+
+msgid "You cannot delete this feed."
+msgstr "Вы не можете удалить эту ленту."
+
+msgid "{name} xpath"
+msgstr "Xpath {name}"

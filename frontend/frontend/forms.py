@@ -1,5 +1,19 @@
 from django import forms
+from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.utils.text import format_lazy
+from django.utils.translation import gettext_lazy as _
+from lxml import etree
+
+
+def _validate_xpath(value):
+    if not value or not value.strip():
+        return value
+    try:
+        etree.XPath(value)
+    except etree.XPathError as exc:
+        raise forms.ValidationError(_('Invalid XPath')) from exc
+    return value
 
 
 class IndexForm(forms.Form):
@@ -26,14 +40,15 @@ class FeedEditForm(forms.Form):
     """Feed settings plus one xpath input per configured field.
 
     The per-field inputs are added in __init__ because they mirror the rows of
-    the Field table.
+    the Field table. Every field is optional: the setup wizard allows feeds with
+    any subset of fields, so an absent field must stay absent when editing.
     """
 
     uri = forms.URLField(
-        max_length=2000, label='Page URL',
+        max_length=2000, label=_('Page URL'),
         widget=forms.URLInput(attrs={'class': 'input-xxlarge'}))
     feed_xpath = forms.CharField(
-        max_length=2000, label='Post xpath',
+        max_length=2000, label=_('Post xpath'), validators=[_validate_xpath],
         widget=forms.TextInput(attrs={'class': 'input-xxlarge'}))
 
     def __init__(self, *args, fields=None, **kwargs):
@@ -41,9 +56,28 @@ class FeedEditForm(forms.Form):
         self.fields_list = list(fields or [])
         for field in self.fields_list:
             self.fields['xpath_%s' % field.name] = forms.CharField(
-                max_length=2000, required=field.required,
-                label='%s xpath' % field.name.capitalize(),
+                max_length=2000, required=False,
+                label=format_lazy(_('{name} xpath'), name=field.name.capitalize()),
+                validators=[_validate_xpath],
                 widget=forms.TextInput(attrs={'class': 'input-xxlarge'}))
+
+    def clean_uri(self):
+        uri = self.cleaned_data['uri']
+        if not getattr(settings, 'READER_ALLOW_PRIVATE', False):
+            from pol.reader.errors import InvalidURLError
+            from pol.reader.safety import assert_public_url
+            try:
+                assert_public_url(uri)
+            except InvalidURLError as exc:
+                raise forms.ValidationError(_('This URL is not allowed.')) from exc
+        return uri
+
+    def clean(self):
+        cleaned = super().clean()
+        if not any(cleaned.get('xpath_%s' % field.name, '').strip()
+                   for field in self.fields_list):
+            raise forms.ValidationError(_('Select at least one feed field.'))
+        return cleaned
 
     def field_rows(self):
         return [(field, self['xpath_%s' % field.name])

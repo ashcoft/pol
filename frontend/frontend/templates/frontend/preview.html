@@ -22,16 +22,10 @@
         document.write(location.protocol + '//' + location.hostname);
       </script>{{ feed_url }}</a>
     </h3>
-    {% if can_edit %}
-      <p>
-        <a class="btn btn-primary" href="{% url 'edit_feed' feed_id %}">Edit feed</a>
-        <a class="btn" href="{% url 'myfeeds' %}">My feeds</a>
-      </p>
-    {% elif feed %}
-      <p>
-        <a class="btn" href="{% url 'login' %}?next={{ request.path|urlencode }}">Sign in to edit</a>
-      </p>
-    {% endif %}
+    <p>
+      <a class="btn btn-primary" href="{% url 'edit_feed' feed_id %}">{% trans "Edit feed" %}</a>
+      <a class="btn" href="{% url 'myfeeds' %}">{% trans "My feeds" %}</a>
+    </p>
   </div>
 
   <div id="preview" class="well" style="margin-bottom: 60px">

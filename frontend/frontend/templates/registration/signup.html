@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% load i18n %}
 
-{% block title %}Sign up | Polite Pol{% endblock %}
+{% block title %}{% trans "Sign up" %} | Polite Pol{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1>Sign up</h1>
+  <h1>{% trans "Sign up" %}</h1>
 </div>
 
 <form method="post" class="form-horizontal">
@@ -26,8 +27,8 @@
   {% endfor %}
 
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Create account</button>
-    <a href="{% url 'login' %}" class="btn">I already have an account</a>
+    <button type="submit" class="btn btn-primary">{% trans "Create account" %}</button>
+    <a href="{% url 'login' %}" class="btn">{% trans "I already have an account" %}</a>
   </div>
 </form>
 {% endblock %}

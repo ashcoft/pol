@@ -12,6 +12,26 @@ jobs:
   python-tests:
     name: Python tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:19
+        env:
+          POSTGRES_DB: pol
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pol"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_NAME: pol
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
     steps:
       - uses: actions/checkout@v7
 
@@ -32,6 +52,11 @@ jobs:
 
       - name: Generate settings module (repo expects settings.py from example)
         run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+
+      - name: Prepare database
+        run: |
+          python frontend/manage.py migrate --noinput
+          python frontend/manage.py loaddata fields.json
 
       - name: Run tests
         run: pytest -v tests/ --ignore=tests/e2e

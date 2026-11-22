@@ -1,8 +1,8 @@
 """Account and feed-management tests.
 
-These need a migrated database. CI's plain pytest job has no PostgreSQL
-service, so the module skips there; it runs wherever the configured database
-has been prepared with ``manage.py migrate``.
+These need a migrated database. The CI jobs prepare PostgreSQL and load the
+field fixture before running pytest, so the tests execute there as well as in
+local environments with a prepared database.
 """
 
 import json
@@ -50,7 +50,8 @@ PASSWORD = 'a-very-strong-pass-123'
 def _settings():
     with override_settings(
             ROOT_URLCONF='frontend.frontend.urls',
-            ALLOWED_HOSTS=['testserver']):
+            ALLOWED_HOSTS=['testserver'],
+            READER_ALLOW_PRIVATE=True):
         yield
 
 
@@ -168,6 +169,139 @@ def test_anonymous_creation_stores_session_key(cleanup):
     assert feed.session_key
     assert feed.session_key == client.session.session_key
     assert FeedField.objects.filter(feed=feed).count() >= 2
+
+
+def _edit_data(uri=None, feed_xpath='//article', **overrides):
+    data = {'uri': uri or (TEST_URI + 'page'), 'feed_xpath': feed_xpath}
+    for field in _fields():
+        data['xpath_%s' % field.name] = overrides.get(
+            field.name, '//%s' % field.name)
+    return data
+
+
+def test_session_feed_cannot_be_taken_by_signed_in_user(cleanup):
+    client = Client()
+    session = client.session
+    session['seed'] = '1'
+    session.save()
+    feed = _make_feed(session_key=session.session_key)
+
+    other = User.objects.create_user('test_other', password=PASSWORD)
+    other_client = Client()
+    other_client.force_login(other)
+
+    assert other_client.get('/en/setup/%s' % feed.id).status_code == 403
+    assert other_client.post(
+        '/en/myfeeds/delete/%s' % feed.id).status_code == 403
+    # The browser session that created the feed can still edit it.
+    assert client.get('/en/setup/%s' % feed.id).status_code == 200
+
+
+def test_legacy_feed_must_be_claimed_before_delete(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=None, session_key='')
+
+    client = Client()
+    client.force_login(owner)
+
+    # A signed-in user may claim an unowned legacy feed through the edit page.
+    assert client.get('/en/setup/%s' % feed.id).status_code == 200
+    # But cannot delete it until it has been claimed.
+    assert client.post(
+        '/en/myfeeds/delete/%s' % feed.id).status_code == 403
+
+    response = client.post('/en/setup/%s' % feed.id, _edit_data())
+    assert response.status_code == 302
+
+    feed.refresh_from_db()
+    assert feed.owner_id == owner.id
+    assert client.post(
+        '/en/myfeeds/delete/%s' % feed.id).status_code == 302
+
+
+def test_edit_rejects_invalid_xpath(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.post(
+        '/en/setup/%s' % feed.id,
+        _edit_data(feed_xpath='//article['))
+    assert response.status_code == 200
+    assert b'Invalid XPath' in response.content
+    feed.refresh_from_db()
+    assert feed.xpath == '//article'
+
+    response = client.post(
+        '/en/setup/%s' % feed.id,
+        _edit_data(title='//h1['))
+    assert response.status_code == 200
+    assert b'Invalid XPath' in response.content
+    assert FeedField.objects.get(
+        feed=feed, field__name='title').xpath == '//title'
+
+
+def test_edit_allows_title_only_feed(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = Feed.objects.create(
+        uri=TEST_URI + 'title-only', xpath='//article', owner=owner)
+    FeedField.objects.create(
+        feed=feed, field=Field.objects.get(name='title'), xpath='//h1')
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.post(
+        '/en/setup/%s' % feed.id,
+        _edit_data(
+            uri=TEST_URI + 'title-only', title='//h2',
+            description='', link='', date='', image=''))
+    assert response.status_code == 302
+
+    assert FeedField.objects.get(
+        feed=feed, field__name='title').xpath == '//h2'
+    assert not FeedField.objects.filter(
+        feed=feed, field__name='description').exists()
+
+
+def test_edit_rejects_private_uri(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    with override_settings(READER_ALLOW_PRIVATE=False):
+        response = client.post(
+            '/en/setup/%s' % feed.id,
+            _edit_data(uri='http://127.0.0.1/'))
+
+    assert response.status_code == 200
+    assert b'This URL is not allowed.' in response.content
+    feed.refresh_from_db()
+    assert feed.uri == TEST_URI + 'page'
+
+
+def test_logout_requires_post(cleanup):
+    User.objects.create_user('test_owner', password=PASSWORD)
+    client = Client()
+    client.force_login(User.objects.get(username='test_owner'))
+
+    assert client.get('/en/accounts/logout/').status_code == 405
+    assert client.get('/en/myfeeds').status_code == 200
+    assert client.post('/en/accounts/logout/').status_code == 302
+
+
+def test_delete_requires_post(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+    client = Client()
+    client.force_login(owner)
+
+    assert client.get(
+        '/en/myfeeds/delete/%s' % feed.id).status_code == 405
 
 
 def test_login_rejects_external_next_redirect(cleanup):

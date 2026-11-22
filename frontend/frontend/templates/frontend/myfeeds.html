@@ -1,18 +1,21 @@
 {% extends "base.html" %}
 {% load i18n %}
 
-{% block title %}My feeds | Polite Pol{% endblock %}
+{% block title %}{% trans "My feeds" %} | Polite Pol{% endblock %}
 
 {% block content %}
+{% trans "Delete this feed?" as delete_confirm %}
 <div class="page-header">
-  <h1>My feeds</h1>
+  <h1>{% trans "My feeds" %}</h1>
 </div>
 
 {% if not user.is_authenticated %}
   <div class="alert alert-info">
-    These feeds are stored in this browser session.
-    <a href="{% url 'signup' %}">Create an account</a> or
-    <a href="{% url 'login' %}">log in</a> to keep them.
+    {% trans "These feeds are stored in this browser session." %}
+    <a href="{% url 'signup' %}">{% trans "Create an account" %}</a>
+    {% trans "or" %}
+    <a href="{% url 'login' %}">{% trans "log in" %}</a>
+    {% trans "to keep them." %}
   </div>
 {% endif %}
 
@@ -20,10 +23,10 @@
 <table class="table table-striped">
   <thead>
     <tr>
-      <th>ID</th>
-      <th>Page</th>
-      <th>Fields</th>
-      <th>Created</th>
+      <th>{% trans "ID" %}</th>
+      <th>{% trans "Page" %}</th>
+      <th>{% trans "Fields" %}</th>
+      <th>{% trans "Created" %}</th>
       <th></th>
     </tr>
   </thead>
@@ -35,12 +38,12 @@
       <td>{{ feed.field_count }}</td>
       <td>{{ feed.created|date:"Y-m-d H:i" }}</td>
       <td class="nowrap">
-        <a class="btn btn-mini" href="{% url 'preview' feed.id %}">Preview</a>
-        <a class="btn btn-mini" href="{% url 'edit_feed' feed.id %}">Edit</a>
+        <a class="btn btn-mini" href="{% url 'preview' feed.id %}">{% trans "Preview" %}</a>
+        <a class="btn btn-mini" href="{% url 'edit_feed' feed.id %}">{% trans "Edit" %}</a>
         <form method="post" action="{% url 'delete_feed' feed.id %}" style="display:inline"
-              onsubmit="return confirm('Delete this feed?');">
+              onsubmit="return confirm('{{ delete_confirm|escapejs }}');">
           {% csrf_token %}
-          <button type="submit" class="btn btn-mini btn-danger">Delete</button>
+          <button type="submit" class="btn btn-mini btn-danger">{% trans "Delete" %}</button>
         </form>
       </td>
     </tr>
@@ -48,6 +51,6 @@
   </tbody>
 </table>
 {% else %}
-<p>You have no feeds yet. <a href="{% url 'index' %}">Create your first feed</a>.</p>
+<p>{% trans "You have no feeds yet." %} <a href="{% url 'index' %}">{% trans "Create your first feed" %}</a>.</p>
 {% endif %}
 {% endblock %}

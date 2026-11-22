@@ -4,6 +4,17 @@ jobs:
   python-tests:
     docker:
       - image: cimg/python:3.15
+      - image: postgres:19
+        environment:
+          POSTGRES_DB: pol
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+    environment:
+      DB_NAME: pol
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
     steps:
       - checkout
       - run:
@@ -22,10 +33,26 @@ jobs:
             pip install -r requirements.txt
             pip install pytest
       - run:
-          name: Run tests
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 30); do
+              if python -c "import socket; socket.create_connection(('127.0.0.1', 5432), 2)" 2>/dev/null; then
+                exit 0
+              fi
+              sleep 2
+            done
+            exit 1
+      - run:
+          name: Prepare database
           command: |
             . venv/bin/activate
             cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+            python frontend/manage.py migrate --noinput
+            python frontend/manage.py loaddata fields.json
+      - run:
+          name: Run tests
+          command: |
+            . venv/bin/activate
             pytest -v tests/
 
 workflows:

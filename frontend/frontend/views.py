@@ -16,6 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext as _
 
 from . import settings as frontend_settings
 from .forms import FeedEditForm, IndexForm, LoginForm, SignUpForm
@@ -56,12 +57,23 @@ def _feed_owner_kwargs(request):
     return {'owner': None, 'session_key': _session_key(request)}
 
 
-def _can_manage(request, feed):
-    if request.user.is_authenticated:
-        # Feeds created before accounts existed have no owner. The first
-        # signed-in editor claims them, after which they stay private.
-        return feed.owner_id in (None, request.user.id)
-    return bool(feed.session_key) and feed.session_key == request.session.session_key
+def _can_manage(request, feed, allow_legacy_claim=False):
+    if feed.owner_id is not None:
+        return request.user.is_authenticated and feed.owner_id == request.user.id
+    if feed.session_key:
+        return feed.session_key == request.session.session_key
+    # Feeds created before accounts existed have neither an owner nor a session.
+    # They may be claimed by a signed-in user through the edit page, but never
+    # deleted directly.
+    return allow_legacy_claim and request.user.is_authenticated
+
+
+def _deny_feed_access(request):
+    if not request.user.is_authenticated:
+        login_url = reverse('login') + '?' + urllib.parse.urlencode(
+            {'next': request.path})
+        return HttpResponseRedirect(login_url)
+    return HttpResponseForbidden(_('You cannot manage this feed.'))
 
 
 def _claim_session_feeds(request, user):
@@ -340,13 +352,12 @@ def preview(request, feed_id):
     if request.method != 'GET':
         return HttpResponseBadRequest('Only GET method supported')
 
-    feed = Feed.objects.filter(pk=feed_id).first()
+    # The preview page itself does not need the database. The edit route
+    # enforces ownership, so it is safe to show the link to everyone.
     return render(request, 'frontend/preview.html',
                   {
                       'feed_url': FEED_PAGE_URL + feed_id,
-                      'feed': feed,
                       'feed_id': feed_id,
-                      'can_edit': bool(feed and _can_manage(request, feed)),
                   })
 
 
@@ -365,14 +376,19 @@ def myfeeds(request):
 
 def edit_feed(request, feed_id):
     feed = get_object_or_404(Feed, pk=feed_id)
-    if not _can_manage(request, feed):
-        return HttpResponseForbidden('You cannot edit this feed.')
-
     fields = list(Field.objects.order_by('id'))
+
     if request.method == 'POST':
         form = FeedEditForm(request.POST, fields=fields)
         if form.is_valid():
             with transaction.atomic():
+                # Reload under a row lock so two concurrent claims cannot both
+                # pass the permission check and overwrite each other.
+                feed = get_object_or_404(
+                    Feed.objects.select_for_update(), pk=feed_id)
+                if not _can_manage(request, feed, allow_legacy_claim=True):
+                    return _deny_feed_access(request)
+
                 if request.user.is_authenticated and feed.owner_id is None:
                     feed.owner = request.user
                     feed.session_key = ''
@@ -393,7 +409,11 @@ def edit_feed(request, feed_id):
                     elif existing:
                         existing.delete()
             return redirect('preview', feed.id)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return _deny_feed_access(request)
     else:
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return _deny_feed_access(request)
         initial = {'uri': feed.uri, 'feed_xpath': feed.xpath}
         for feed_field in feed.feedfield_set.select_related('field'):
             initial['xpath_%s' % feed_field.field.name] = feed_field.xpath
@@ -404,11 +424,13 @@ def edit_feed(request, feed_id):
 
 
 def delete_feed(request, feed_id):
-    feed = get_object_or_404(Feed, pk=feed_id)
-    if not _can_manage(request, feed):
-        return HttpResponseForbidden('You cannot delete this feed.')
     if request.method != 'POST':
         return HttpResponseNotAllowed(['POST'])
+    feed = get_object_or_404(Feed, pk=feed_id)
+    # Deleting an unclaimed legacy feed is not allowed. A user must claim it
+    # through the edit page first.
+    if not _can_manage(request, feed):
+        return HttpResponseForbidden(_('You cannot delete this feed.'))
     feed.delete()
     return redirect('myfeeds')
 
@@ -453,6 +475,8 @@ def login_view(request):
 
 
 def logout_view(request):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
     auth_logout(request)
     return redirect('index')
 

@@ -1,14 +1,15 @@
 {% extends "base.html" %}
+{% load i18n %}
 
-{% block title %}Edit feed #{{ feed.id }} | Polite Pol{% endblock %}
+{% block title %}{% trans "Edit feed" %} #{{ feed.id }} | Polite Pol{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1>Edit feed #{{ feed.id }}</h1>
+  <h1>{% trans "Edit feed" %} #{{ feed.id }}</h1>
 </div>
 
 <p class="muted">
-  Source page:
+  {% trans "Source page:" %}
   <a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a>
 </p>
 
@@ -31,13 +32,13 @@
     {% endif %}
   {% endfor %}
 
-  <h3>Field selectors</h3>
-  <p class="muted">Leave a selector empty to drop that field from the feed. Required fields are marked with *.</p>
+  <h3>{% trans "Field selectors" %}</h3>
+  <p class="muted">{% trans "Leave a selector empty to drop that field from the feed. At least one field is required." %}</p>
 
   {% for model_field, bound_field in field_rows %}
     <div class="control-group{% if bound_field.errors %} error{% endif %}">
       <label class="control-label" for="{{ bound_field.id_for_label }}">
-        {{ bound_field.label }}{% if model_field.required %} *{% endif %}
+        {{ bound_field.label }}
       </label>
       <div class="controls">
         {{ bound_field }}
@@ -47,9 +48,9 @@
   {% endfor %}
 
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary">Save changes</button>
-    <a href="{% url 'preview' feed.id %}" class="btn">Cancel</a>
-    <a href="{% url 'myfeeds' %}" class="btn btn-link">Back to my feeds</a>
+    <button type="submit" class="btn btn-primary">{% trans "Save changes" %}</button>
+    <a href="{% url 'preview' feed.id %}" class="btn">{% trans "Cancel" %}</a>
+    <a href="{% url 'myfeeds' %}" class="btn btn-link">{% trans "Back to my feeds" %}</a>
   </div>
 </form>
 {% endblock %}
