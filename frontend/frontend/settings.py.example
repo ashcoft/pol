@@ -75,6 +75,10 @@ MIDDLEWARE = [
 
 SITE_ID = 1
 
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'myfeeds'
+LOGOUT_REDIRECT_URL = 'index'
+
 ROOT_URLCONF = 'frontend.urls'
 
 TEMPLATES = [

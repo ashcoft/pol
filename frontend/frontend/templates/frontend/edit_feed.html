@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Edit feed #{{ feed.id }} | Polite Pol{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Edit feed #{{ feed.id }}</h1>
+</div>
+
+<p class="muted">
+  Source page:
+  <a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a>
+</p>
+
+<form method="post" class="form-horizontal">
+  {% csrf_token %}
+
+  {% if form.non_field_errors %}
+    <div class="alert alert-error">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  {% for field in form %}
+    {% if field.name == 'uri' or field.name == 'feed_xpath' %}
+    <div class="control-group{% if field.errors %} error{% endif %}">
+      <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      <div class="controls">
+        {{ field }}
+        {% if field.errors %}<span class="help-inline">{{ field.errors|striptags }}</span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <h3>Field selectors</h3>
+  <p class="muted">Leave a selector empty to drop that field from the feed. Required fields are marked with *.</p>
+
+  {% for model_field, bound_field in field_rows %}
+    <div class="control-group{% if bound_field.errors %} error{% endif %}">
+      <label class="control-label" for="{{ bound_field.id_for_label }}">
+        {{ bound_field.label }}{% if model_field.required %} *{% endif %}
+      </label>
+      <div class="controls">
+        {{ bound_field }}
+        {% if bound_field.errors %}<span class="help-inline">{{ bound_field.errors|striptags }}</span>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save changes</button>
+    <a href="{% url 'preview' feed.id %}" class="btn">Cancel</a>
+    <a href="{% url 'myfeeds' %}" class="btn btn-link">Back to my feeds</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}My feeds | Polite Pol{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>My feeds</h1>
+</div>
+
+{% if not user.is_authenticated %}
+  <div class="alert alert-info">
+    These feeds are stored in this browser session.
+    <a href="{% url 'signup' %}">Create an account</a> or
+    <a href="{% url 'login' %}">log in</a> to keep them.
+  </div>
+{% endif %}
+
+{% if feeds %}
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Page</th>
+      <th>Fields</th>
+      <th>Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for feed in feeds %}
+    <tr>
+      <td>{{ feed.id }}</td>
+      <td><a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a></td>
+      <td>{{ feed.field_count }}</td>
+      <td>{{ feed.created|date:"Y-m-d H:i" }}</td>
+      <td class="nowrap">
+        <a class="btn btn-mini" href="{% url 'preview' feed.id %}">Preview</a>
+        <a class="btn btn-mini" href="{% url 'edit_feed' feed.id %}">Edit</a>
+        <form method="post" action="{% url 'delete_feed' feed.id %}" style="display:inline"
+              onsubmit="return confirm('Delete this feed?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-mini btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>You have no feeds yet. <a href="{% url 'index' %}">Create your first feed</a>.</p>
+{% endif %}
+{% endblock %}
