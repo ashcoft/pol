@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+build
+mysql
+frontend/frontend/settings.py
+frontend/frontend/static
+tests
+*.log
+
+.env

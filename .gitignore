@@ -5,3 +5,5 @@ frontend/frontend/static
 .*
 !.github
 !.circleci
+!.dockerignore
+!.env.example

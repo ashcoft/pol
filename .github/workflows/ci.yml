@@ -19,16 +19,16 @@ jobs:
         with:
           python-version: "3.15"
 
-      - name: Install system deps (mysqlclient build)
+      - name: Install system deps (psycopg build)
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config default-libmysqlclient-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev
+          sudo apt-get install -y build-essential pkg-config libpq-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev
 
       - name: Install Python deps
         run: |
           pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          pip install mysqlclient pytest
+          pip install pytest
 
       - name: Generate settings module (repo expects settings.py from example)
         run: cp frontend/frontend/settings.py.example frontend/frontend/settings.py
@@ -53,7 +53,7 @@ jobs:
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt mysqlclient pylint
+          pip install -r requirements.txt pylint
 
       - name: Pylint (errors only)
         run: |

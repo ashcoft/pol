@@ -1,6 +1,6 @@
 """Feed reading, discovery and full-text extraction for pol.
 
-The package is deliberately independent from Twisted, Django and MySQL so it can
+The package is deliberately independent from Twisted, Django and the database so it can
 be used from the downloader server, the Django frontend and the command line.
 """
 

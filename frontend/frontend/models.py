@@ -17,7 +17,7 @@ class FeedField(models.Model):
 
 class Post(models.Model):
     feed = models.ForeignKey(Feed, on_delete=models.CASCADE)
-    md5sum = models.BinaryField()
+    md5sum = models.BinaryField(max_length=16)
     created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
