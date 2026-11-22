@@ -1,0 +1,57 @@
+# Production compose: pulls the published image and has no build section, so
+# `docker compose -f docker-compose.prod.yml up -d` can never build locally.
+services:
+  politepol:
+    image: ghcr.io/ashcoft/pol:${POL_VERSION:-latest}
+    pull_policy: always
+    environment:
+      DB_NAME: '${DB_NAME:-pol}'
+      DB_USER: '${DB_USER:-pol}'
+      DB_PASSWORD: '${DB_PASSWORD:-change-me}'
+      DB_HOST: 'dbpolitepol'
+      DB_PORT: '5432'
+      TIME_ZONE: '${TIME_ZONE:-UTC}'
+      DEBUG: '${DEBUG:-False}'
+      SECRET_KEY: '${SECRET_KEY:-change-me-in-production}'
+      ALLOWED_HOSTS: '${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}'
+      CSRF_TRUSTED_ORIGINS: '${CSRF_TRUSTED_ORIGINS:-}'
+      GUNICORN_WORKERS: '${GUNICORN_WORKERS:-3}'
+      GUNICORN_THREADS: '${GUNICORN_THREADS:-4}'
+      GUNICORN_TIMEOUT: '${GUNICORN_TIMEOUT:-120}'
+    depends_on:
+      dbpolitepol:
+        condition: service_healthy
+    container_name: politepol
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    networks:
+      - politepol-network
+    ports:
+      - '127.0.0.1:8000:8000'
+      - '127.0.0.1:1234:1234'
+
+  dbpolitepol:
+    image: postgres:19
+    container_name: politepol-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: '${DB_NAME:-pol}'
+      POSTGRES_USER: '${DB_USER:-pol}'
+      POSTGRES_PASSWORD: '${DB_PASSWORD:-change-me}'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - politepol-network
+    volumes:
+      - pol_pg:/var/lib/postgresql
+
+volumes:
+  pol_pg:
+
+networks:
+  politepol-network:
+    driver: 'bridge'
