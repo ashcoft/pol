@@ -2,7 +2,7 @@
 # `docker compose -f docker-compose.prod.yml up -d` can never build locally.
 services:
   politepol:
-    image: ghcr.io/ashcoft/pol:latest
+    image: ghcr.io/ashcoft/pol:1.3.1
     pull_policy: always
     environment:
       DB_NAME: '${DB_NAME:-pol}'
@@ -10,7 +10,6 @@ services:
       DB_PASSWORD: '${DB_PASSWORD:-change-me}'
       DB_HOST: 'dbpolitepol'
       DB_PORT: '5432'
-      WEB_PORT: '${WEB_PORT:-8088}'
       TIME_ZONE: '${TIME_ZONE:-UTC}'
       DEBUG: '${DEBUG:-False}'
       SECRET_KEY: '${SECRET_KEY:-change-me-in-production}'
@@ -29,7 +28,8 @@ services:
     networks:
       - politepol-network
     ports:
-      - '${WEB_PORT:-8088}:${WEB_PORT:-8088}'
+      - '127.0.0.1:8000:8000'
+      - '127.0.0.1:1234:1234'
 
   dbpolitepol:
     image: postgres:19

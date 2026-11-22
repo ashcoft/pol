@@ -13,11 +13,11 @@ pol/                       downloader core (Twisted HTTP server, feed builder, c
 pol/reader/                feed reader: discovery, parsing, full text, caches, output formats, CLI
 frontend/                  Django app (models, views, templates, forms, migrations, fixtures, settings.py.example)
 frontend/frontend/assets/  static assets (LESS/SASS, CSS, JS, images)
-nginx/                     nginx configs: default.site-example (host) and nginx.conf (container)
+nginx/                     host nginx template (default.site-example)
 tests/                     pytest test suite
 .github/workflows/         CI, Docker publish, release, Snyk, Pullfrog
 requirements.txt           pinned Python dependencies
-Dockerfile                 production image (Python 3.15 + nginx)
+Dockerfile                 production image (Python 3.15)
 docker-compose.yaml        app + PostgreSQL 19
 docker-compose.prod.yml    pull-only production compose (no build)
 .env.example               production environment template
@@ -77,15 +77,15 @@ The downloader server exposes these endpoints (nginx proxies them, see
 `item_author`, `item_image`. Full-text fetching is off by default on HTTP and
 can be enabled with `fulltext=1`.
 
-The examples use the Docker stack's nginx port (`8088`). In development the
-downloader alone listens on `1234`.
+The examples use the host nginx URL. In development the downloader alone
+listens on `1234`.
 
 Examples:
 
 ```bash
-curl 'http://localhost:8088/read?url=https://example.com/feed.xml'
-curl 'http://localhost:8088/read?url=https://example.com/feed.xml&format=json&fulltext=1'
-curl 'http://localhost:8088/discover?url=https://example.com/'
+curl 'http://localhost/read?url=https://example.com/feed.xml'
+curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltext=1'
+curl 'http://localhost/discover?url=https://example.com/'
 ```
 
 ## Command line
@@ -125,23 +125,22 @@ The production image and CI are built and tested with:
 
 | Component | Version / requirement |
 | --- | --- |
+| pol | 1.3.1 (`ghcr.io/ashcoft/pol:1.3.1` in production; `latest` in development) |
 | Python | 3.15 (`python:3.15-slim`) |
 | Django | 6.1.3 |
 | PostgreSQL | 19 (`postgres:19`) |
-| nginx | 1.26.x from the Debian trixie base image (not pinned) |
-| Gunicorn | 27.0.1 |
-| WhiteNoise | 6.12.0 |
-| psycopg | 3.3.9 (`psycopg[binary]`) |
-| Scrapy | 2.20.0 |
-| Twisted | 26.10.0 |
-| lxml | 6.1.3 |
-| Redis (optional cache) | 8.1.0 |
+| nginx | 1.28.3 (Ubuntu Server 26.04 LTS host package) |
 | Docker Compose | v2 (required) |
 
-Python packages are pinned in `requirements.txt`. The Dockerfile pins the Python
-base image tag, and both compose files pin `postgres:19`. nginx comes from the
-Debian package inside `python:3.15-slim` and is not pinned; pin the base image
-digest if you need byte-for-byte reproducible builds.
+The application version is 1.3.1. `docker-compose.prod.yml` pins
+`ghcr.io/ashcoft/pol:1.3.1`, while `docker-compose.yaml` tracks
+`ghcr.io/ashcoft/pol:latest` for development. Python packages are pinned in
+`requirements.txt`. The Dockerfile pins the Python base image tag, and both
+compose files pin `postgres:19`. nginx is not in the compose stack: use the
+Ubuntu Server LTS package on the host (1.28.3 on 26.04) with the included
+template. Pin the base image digest if you need byte-for-byte reproducible
+builds. Bump the `1.3.1` tag in `docker-compose.prod.yml` and this table when a
+new release is published.
 
 System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
@@ -219,15 +218,16 @@ install nginx and use the included site template:
 
 ```bash
 sudo apt-get install nginx
-sudo cp nginx/default.site-example /etc/nginx/sites-available/default
-sudo service nginx reload
+sudo cp nginx/default.site-example /etc/nginx/sites-available/pol
+sudo ln -s /etc/nginx/sites-available/pol /etc/nginx/sites-enabled/pol
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 The template proxies `/` to the Django server on port 8000 (Gunicorn in
 production) and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`, `/discover`
-and `/api/` to the downloader on port 1234. In Docker, `frontend/start.sh`
-patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose
-file exposes.
+and `/api/` to the downloader on port 1234. The Docker stack publishes those
+same loopback ports for the host nginx.
 
 The template forwards the browser `Host` header so Django's CSRF checks pass
 behind the proxy. If you reach the app by anything other than
@@ -236,7 +236,8 @@ or IP before starting Django.
 
 ## Docker
 
-The production image is `ghcr.io/ashcoft/pol:latest`.
+The production image is `ghcr.io/ashcoft/pol:1.3.1`.
+`docker-compose.yaml` uses `ghcr.io/ashcoft/pol:latest` for development.
 
 ```bash
 git clone https://github.com/ashcoft/pol.git
@@ -251,15 +252,6 @@ private, you are not logged in, or the image is not published yet), Compose
 falls back to building the local `Dockerfile` because the service also has a
 `build:` section. Use `docker compose up -d --build` to force a local build.
 
-If you never want the build fallback, use the pull-only production file:
-
-```bash
-docker compose -f docker-compose.prod.yml up -d
-```
-
-It has no `build:` section and uses `pull_policy: always`, so it always pulls
-the published image and fails explicitly if the registry is unavailable.
-
 The GHCR package is private by default. Log in once with a token that has
 `read:packages`:
 
@@ -272,18 +264,32 @@ docker compose up -d
 Set the package visibility to public in the GitHub package settings if you want
 anonymous pulls.
 
+If you never want the build fallback, use the pull-only production file:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+It has no `build:` section and uses `pull_policy: always`, so it always pulls
+the published image and fails explicitly if the registry is unavailable.
+
 The stack starts two services:
 
-* `politepol` - `ghcr.io/ashcoft/pol:latest`; nginx, Gunicorn and the downloader
-  in one container, running as the unprivileged `appuser`; HTTP on `WEB_PORT`
-  (default `8088`)
+* `politepol` - `ghcr.io/ashcoft/pol:latest` (or `:1.3.1` in production);
+  Gunicorn and the downloader in one container, running as the unprivileged
+  `appuser`; publishes `127.0.0.1:8000` and `127.0.0.1:1234` on the host
 * `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume mounted
   at `/var/lib/postgresql`
 
-At start, `frontend/start.sh` waits for PostgreSQL, patches nginx's listen port,
-runs `migrate` and `loaddata`, then starts the downloader, nginx and Gunicorn.
-`settings.py` is generated at image build and reads the environment at import.
-`collectstatic` runs at image build; WhiteNoise serves `/static/`.
+The compose stack does not run nginx. Use the nginx from Ubuntu Server LTS
+(1.28.3 on 26.04) with the included template; it proxies `/` to
+`127.0.0.1:8000` and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`,
+`/discover` and `/api/` to `127.0.0.1:1234`.
+
+At start, `frontend/start.sh` waits for PostgreSQL, runs `migrate` and
+`loaddata`, then starts the downloader and Gunicorn. `settings.py` is generated
+at image build and reads the environment at import. `collectstatic` runs at
+image build; WhiteNoise serves `/static/` through Gunicorn.
 
 Compose fixes `DB_HOST=dbpolitepol` and `DB_PORT=5432`; PostgreSQL always listens
 on 5432 inside the container. The app's settings still read `DB_HOST`/`DB_PORT`
@@ -301,7 +307,6 @@ Compose reads `.env` for these values:
 | `DB_NAME` | `pol` | database name |
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
-| `WEB_PORT` | `8088` | public HTTP port |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
 | `SECRET_KEY` | `change-me-in-production` | set a long random value |
@@ -315,29 +320,30 @@ Example `.env` for a public HTTPS site:
 
 ```dotenv
 DB_PASSWORD=change-me
-WEB_PORT=8088
 DEBUG=False
 SECRET_KEY=put-a-long-random-value-here
 ALLOWED_HOSTS=feeds.example.com
 CSRF_TRUSTED_ORIGINS=https://feeds.example.com
 ```
 
-### Access
+### Host nginx (Ubuntu Server LTS)
+
+Install nginx from the Ubuntu repository and use the included template:
 
 ```bash
-http://localhost:8088
+sudo apt-get install nginx
+sudo cp nginx/default.site-example /etc/nginx/sites-available/pol
+sudo ln -s /etc/nginx/sites-available/pol /etc/nginx/sites-enabled/pol
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-The container's nginx speaks HTTP. Terminate TLS in front of it, for example
-with a host nginx and certbot:
+The template listens on port 80 and proxies to the loopback ports published by
+Compose. For HTTPS:
 
-```nginx
-location / {
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_pass http://127.0.0.1:8088;
-}
+```bash
+sudo apt-get install certbot python3-certbot-nginx
+sudo certbot --nginx -d feeds.example.com
 ```
 
 Then set `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` to the public HTTPS host.
@@ -382,6 +388,7 @@ workflow. Packages are private by default.
 | `permission_denied: read_package` in Actions | Package is not linked to the repository | Link the package in its settings and re-run the workflow |
 | App waits for the database and exits | PostgreSQL not ready or wrong credentials | `docker compose logs dbpolitepol`; check `DB_*` in `.env` |
 | `dbpolitepol` exits with "PostgreSQL data in /var/lib/postgresql/data" | Volume created with the old mount | Dump it first if you need the data, then `docker compose down -v` and start fresh |
+| Host nginx returns 502 | App ports not reachable | `docker compose ps`; the app must publish `127.0.0.1:8000` and `127.0.0.1:1234` |
 
 ## Tests
 
