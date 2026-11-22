@@ -2,10 +2,11 @@
     'use strict';
 
     $(function () {
-        var $button = $('#find-feeds-btn');
-        if (!$button.length) {
+        var $form = $('form.rss-search-form').first();
+        if (!$form.length) {
             return;
         }
+        var $submit = $form.find('input[type="submit"]');
 
         var $input = $('input[name="url"]').first();
         var $status = $('#feed-finder-status');
@@ -24,6 +25,7 @@
         var toastTimer = null;
         var previewRequest = null;
         var previewSeq = 0;
+        var sourceFavicon = '';
 
         function el(tag) {
             return $(document.createElement(tag));
@@ -68,6 +70,25 @@
                 return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';
             } catch (ignore) {
                 return '';
+            }
+        }
+
+        var FALLBACK_FAVICON = '/static/frontend/images/rss-640.png';
+
+        function faviconUrl(value) {
+            try {
+                var host = new URL(value, window.location.href).hostname;
+                return host
+                    ? 'https://icons.duckduckgo.com/ip3/' + encodeURIComponent(host) + '.ico'
+                    : '';
+            } catch (ignore) {
+                return '';
+            }
+        }
+
+        function useFallbackIcon(image) {
+            if (image.src.indexOf('rss-640') === -1) {
+                image.src = FALLBACK_FAVICON;
             }
         }
 
@@ -137,6 +158,13 @@
             currentFeedUrl = feed.url;
             lastTrigger = trigger || null;
             $panelTitle.text(feed.title || feed.url);
+            var favicon = document.getElementById('feed-preview-favicon');
+            if (favicon) {
+                favicon.onerror = function () {
+                    useFallbackIcon(this);
+                };
+                favicon.src = sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON;
+            }
             $panelFull.attr('href', '/read?url=' + encodeURIComponent(feed.url) + '&format=html');
             $panelBody.empty().append(el('p').addClass('muted').text('Loading feed…'));
 
@@ -196,14 +224,19 @@
                 .filter(':visible');
         }
 
-        function renderResults(feeds) {
+        function openFeedBuilder(url) {
+            // Reuse the index form's existing url -> setup redirect.
+            window.location.assign(window.location.pathname + '?url=' + encodeURIComponent(url));
+        }
+
+        function renderResults(feeds, sourceUrl) {
             $results.empty();
+            sourceFavicon = faviconUrl(sourceUrl);
             if (!feeds.length) {
-                $status.text('No feeds found on this page.');
                 return;
             }
 
-            $status.text(feeds.length + ' feed(s) found:');
+            $status.text('Found ' + feeds.length + ' RSS feed' + (feeds.length === 1 ? '' : 's'));
             var seen = {};
 
             $.each(feeds, function (_index, feed) {
@@ -213,34 +246,46 @@
                 seen[feed.url] = true;
 
                 var $item = el('li').addClass('feed-result');
+                var $icon = el('img').addClass('feed-result-favicon').attr({
+                    src: sourceFavicon || faviconUrl(feed.url) || FALLBACK_FAVICON,
+                    alt: '',
+                    width: 38,
+                    height: 38,
+                    loading: 'lazy',
+                    referrerpolicy: 'no-referrer'
+                });
+                $icon[0].onerror = function () {
+                    useFallbackIcon(this);
+                };
+                $item.append($icon);
+
+                var $main = el('div').addClass('feed-result-main');
                 var $head = el('div').addClass('feed-result-head');
                 el('a').addClass('feed-result-title').attr({
                     href: feed.url,
                     target: '_blank',
                     rel: 'noopener'
                 }).text(feed.title || feed.url).appendTo($head);
-                if (feed.type) {
-                    el('span').addClass('feed-result-type').text(feed.type).appendTo($head);
-                }
-                $item.append($head);
-                el('div').addClass('feed-result-url').text(feed.url).appendTo($item);
+                $main.append($head);
+                el('div').addClass('feed-result-url').text(feed.url).appendTo($main);
+                $item.append($main);
 
                 var $actions = el('div').addClass('feed-result-actions');
                 el('button').attr('type', 'button')
-                    .addClass('btn btn-mini feed-preview-trigger')
+                    .addClass('rss-action rss-action-outline feed-preview-trigger')
                     .text('Preview')
                     .data('feed', feed)
                     .appendTo($actions);
-                el('button').attr('type', 'button')
-                    .addClass('btn btn-mini feed-copy-trigger')
-                    .text('Copy')
-                    .data('url', feed.url)
-                    .appendTo($actions);
-                el('a').addClass('btn btn-mini').attr({
+                el('a').addClass('rss-action rss-action-primary').attr({
                     href: feed.url,
                     target: '_blank',
                     rel: 'noopener'
                 }).text('Open').appendTo($actions);
+                el('button').attr('type', 'button')
+                    .addClass('rss-action rss-action-muted feed-copy-trigger')
+                    .text('Copy')
+                    .data('url', feed.url)
+                    .appendTo($actions);
                 $item.append($actions);
                 $results.append($item);
             });
@@ -257,7 +302,7 @@
             }
 
             running = true;
-            $button.prop('disabled', true);
+            $submit.prop('disabled', true);
             $status.text('Looking for feeds…');
             $results.empty();
 
@@ -266,12 +311,18 @@
                 data: {url: url},
                 dataType: 'json'
             }).done(function (data) {
-                renderResults((data && data.feeds) || []);
+                var feeds = (data && data.feeds) || [];
+                if (!feeds.length) {
+                    $status.text('No RSS feed found — opening the feed builder…');
+                    openFeedBuilder(url);
+                    return;
+                }
+                renderResults(feeds, url);
                 if (window.history && window.history.replaceState) {
                     window.history.replaceState(null, '', '?q=' + encodeURIComponent(url));
                 }
                 if (scrollToResults) {
-                    var top = $('.feed-finder').offset().top - 20;
+                    var top = $('.rss-finder-hero').offset().top - 20;
                     $('html, body').animate({scrollTop: top}, 300);
                 }
             }).fail(function (xhr) {
@@ -281,14 +332,20 @@
                 } catch (ignore) {
                     // keep the generic message
                 }
-                $status.text(message);
+                if (xhr.status === 400) {
+                    $status.text(message);
+                    return;
+                }
+                $status.text(message + ' Opening the feed builder…');
+                openFeedBuilder(url);
             }).always(function () {
                 running = false;
-                $button.prop('disabled', false);
+                $submit.prop('disabled', false);
             });
         }
 
-        $button.on('click', function () {
+        $form.on('submit', function (event) {
+            event.preventDefault();
             runDiscovery($input.val(), false);
         });
 

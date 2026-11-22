@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs
 
 from twisted.internet import threads
@@ -21,8 +22,9 @@ from twisted.web.server import NOT_DONE_YET
 from .cache import HttpCache, make_cache
 from .errors import FetchError, InvalidURLError, ParseError
 from .http import DEFAULT_MAX_SIZE, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, Fetcher
-from .parse import html_to_text, sanitize_html
+from .parse import html_to_text, page_image, sanitize_html
 from .pipeline import Options, discover, process
+from .urls import is_http_url
 
 _PATHS = frozenset({
     b'/read', b'/rss', b'/discover', b'/api/find-feeds', b'/api/feed-preview',
@@ -79,10 +81,10 @@ class ReaderEndpoints:
     def handles(self, path):
         return path in _PATHS
 
-    def _fetcher(self, options):
+    def _fetcher(self, options, timeout=None):
         return Fetcher(
             user_agent=options.user_agent,
-            timeout=options.timeout,
+            timeout=timeout or options.timeout,
             max_size=options.max_size,
             cache=self.http_cache,
             verify_ssl=self.verify_ssl,
@@ -90,6 +92,29 @@ class ReaderEndpoints:
             cache_only=options.cache_only,
             allow_private=_effective_allow_private(self, options),
         )
+
+    def _enrich_images(self, feed, options, limit=12):
+        """Fill missing item images from the linked article pages."""
+        missing = [item for item in feed.items
+                   if not item.images and item.link and is_http_url(item.link)][:limit]
+        if not missing:
+            return
+        fetcher = self._fetcher(options, timeout=min(self.timeout, 8))
+
+        def load(item):
+            try:
+                response = fetcher.fetch(item.link, allow_meta=False)
+            except (FetchError, InvalidURLError):
+                return ''
+            if not response.ok or not response.is_html:
+                return ''
+            return page_image(response.text, response.url)
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            images = list(pool.map(load, missing))
+        for item, image in zip(missing, images):
+            if image:
+                item.images.append(image)
 
     def _options(self, request):
         callback = _arg(request, 'callback')
@@ -212,7 +237,9 @@ class ReaderEndpoints:
         fetcher = self._fetcher(options)
 
         def work():
-            return process(url, options=options, fetcher=fetcher).feed
+            feed = process(url, options=options, fetcher=fetcher).feed
+            self._enrich_images(feed, options)
+            return feed
 
         def render(feed):
             payload = {

@@ -227,7 +227,7 @@ class Downloader(object):
                 self.request.write(('Downloader error: ' + str(error.getErrorMessage())).encode('utf-8'))
                 self.request.write(('Traceback: ' + str(error.getTraceback())).encode('utf-8'))
             else:
-                err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or contact us by email: <a href="mailto:politepol.com@gmail.com">politepol.com@gmail.com</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
+                err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or open an issue: <a href="https://github.com/ashcoft/">github.com/ashcoft</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
                 self.request.write(err_message.encode('utf-8'))
 
             self.request.finish()
