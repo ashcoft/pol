@@ -129,19 +129,36 @@
         return text;
     }
 
-    function htmlToText(value) {
+    function htmlToText(value, doc) {
         if (!value) {
             return '';
+        }
+        var documentRef = doc || (typeof document !== 'undefined' ? document : null);
+        if (documentRef && typeof documentRef.createElement === 'function') {
+            try {
+                // A template parses an arbitrary fragment in place, keeping
+                // table cells and <noscript> boundaries that full-document
+                // parsing would drop.
+                var template = documentRef.createElement('template');
+                template.innerHTML = String(value);
+                if (template.content) {
+                    return String(collectText(template.content))
+                        .replace(/\s+/g, ' ').trim();
+                }
+            } catch (ignore) {
+                // Fall through to the parser paths below.
+            }
         }
         if (typeof DOMParser !== 'undefined') {
             try {
                 // DOMParser creates an inert document, so parsing does not
                 // fetch <img>/<iframe> resources before safeUrl runs.
-                var documentRef = new DOMParser().parseFromString(String(value), 'text/html');
-                if (!documentRef.body) {
+                var parsedDocument = new DOMParser().parseFromString(
+                    String(value), 'text/html');
+                if (!parsedDocument.body) {
                     return '';
                 }
-                return String(collectText(documentRef.body))
+                return String(collectText(parsedDocument.body))
                     .replace(/\s+/g, ' ').trim();
             } catch (ignore) {
                 // Fall back to the tag-stripping path below.
@@ -190,7 +207,7 @@
         return found;
     }
 
-    function previewItems(feed) {
+    function previewItems(feed, doc) {
         var items = (feed && feed.items) || [];
         return items.map(function (item) {
             var description = item.description || '';
@@ -203,7 +220,7 @@
                 title: item.title ? String(item.title) : String(item.link || ''),
                 link: safeUrl(item.link),
                 description: description,
-                text: htmlToText(description),
+                text: htmlToText(description, doc),
                 images: images
             };
         });
@@ -214,7 +231,7 @@
         if (!container || !documentRef) {
             return;
         }
-        previewItems(feed).forEach(function (item) {
+        previewItems(feed, documentRef).forEach(function (item) {
             var heading = documentRef.createElement('h4');
             if (item.link) {
                 var anchor = documentRef.createElement('a');
