@@ -343,3 +343,49 @@ def test_linkless_guid_ignores_sanitizer_only_changes(monkeypatch):
         unsanitized.encode('utf-8')).find('.//item/guid').text
 
     assert normal_guid == unsanitized_guid
+
+
+def test_build_feed_resolves_valid_images_when_another_is_malformed(monkeypatch):
+    page = (
+        '<html><head><title>Feed</title></head><body><article>'
+        '<h2><a href="/post">Post</a></h2>'
+        '<div class="desc"><img src="/chart.png"><img src=" https://[bad"></div>'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page)
+    assert count == 1
+    description = etree.fromstring(
+        xml.encode('utf-8')).find('.//item/description').text
+    assert 'https://example.com/chart.png' in description
+    assert 'https://[bad' not in description
+
+
+def test_build_feed_promotes_uppercase_data_lazy_image(monkeypatch):
+    page = (
+        '<html><head><title>Feed</title></head><body><article>'
+        '<h2><a href="/post">Post</a></h2>'
+        '<div class="desc"><img src="DATA:image/gif;base64,AAA" '
+        'data-src="/photo.jpg"></div>'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page)
+    assert count == 1
+    description = etree.fromstring(
+        xml.encode('utf-8')).find('.//item/description').text
+    assert 'https://example.com/photo.jpg' in description
+
+
+def test_build_feed_keeps_escaped_leading_text(monkeypatch):
+    page = (
+        '<html><head><title>Feed</title></head><body><article>'
+        '<h2><a href="/post">Post</a></h2>'
+        '<div class="desc">&lt;strong&gt;sample&lt;/strong&gt;'
+        '<img src="chart.png"></div>'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page)
+    assert count == 1
+    description = etree.fromstring(
+        xml.encode('utf-8')).find('.//item/description').text
+    assert '&lt;strong&gt;sample&lt;/strong&gt;' in description
+    assert '<strong>' not in description

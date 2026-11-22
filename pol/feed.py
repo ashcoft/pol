@@ -194,6 +194,8 @@ def _normalize_images(fragment, base_url):
                 src = ''
             if src:
                 img.set('src', src)
+            else:
+                img.attrib.pop('src', None)
             changed = True
         if src and not _usable_url(src):
             del img.attrib['src']
@@ -210,8 +212,9 @@ def _normalize_images(fragment, base_url):
 def _legacy_normalize_images(fragment, base_url):
     """Pre-sanitizer image normalization, kept only for stable fallback GUIDs.
 
-    Do not add URL filtering or text escaping here: existing link-less posts
-    were identified by this exact output, so changing it republishes them.
+    Do not add URL filtering, text escaping or a case-insensitive ``data:``
+    check here: existing link-less posts were identified by this exact output,
+    so changing it republishes them.
     """
     if '<img' not in fragment:
         return fragment
@@ -228,7 +231,10 @@ def _legacy_normalize_images(fragment, base_url):
             img.set('src', src)
             changed = True
         if src and base_url and not re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', src, re.I):
-            img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            try:
+                img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            except ValueError:
+                return fragment
             changed = True
         if 'loading' in img.attrib:
             del img.attrib['loading']
@@ -437,6 +443,7 @@ class Feed(object):
             title = item['title'] if 'title' in item else ''
             title = _xml_text(re.sub(r'<[^>]+>', '', title)).strip()
             raw_desc = item['description'] if 'description' in item else ''
+            desc = _xml_text(_sanitize_urls(_normalize_images(raw_desc, base_url)))
             # Keep the fallback GUID on the legacy description pipeline. Only
             # the published description is sanitized, so a sanitizer change
             # does not make readers treat an old post as new.
@@ -444,7 +451,6 @@ class Feed(object):
                 legacy_desc = _legacy_normalize_images(raw_desc, base_url)
             except ValueError:
                 legacy_desc = raw_desc
-            desc = _xml_text(_sanitize_urls(legacy_desc))
             image = item.get('image')
             if image:
                 image = self._build_link(page_unicode, feed_config['uri'], image)
