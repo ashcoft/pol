@@ -28,6 +28,18 @@
     {% trans 'subscribe.loading' %}
   </div>
   <script type="text/javascript">
+      function safeUrl(value) {
+          if (!value) {
+              return '';
+          }
+          try {
+              var url = new URL(value, window.location.origin);
+              return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+          } catch (ignore) {
+              return '';
+          }
+      }
+
       function tryGetFeed() {
           $.getFeed({
               url: '{{ feed_url }}?sanitize=Y',
@@ -35,25 +47,22 @@
                   if ('items' in feed) {
                       $('#preview').empty()
                               .append($('<h3 style="margin-top: 0;"></h3>').append("{% trans 'subscribe.preview' %}: "));
-                      /*.append($('<div></div>').append($('<a/>').attr('href', feed.link).attr('target', '_blank').text(feed.title)))*/
-
-                      var html = '';
 
                       for (var i = 0; i < feed.items.length; i++) {
 
                           var item = feed.items[i];
+                          var link = safeUrl(item.link);
+                          var title = item.title ? item.title : item.link;
+                          var $heading = $('<h4></h4>');
 
-                          $('#preview').append('<h4>'
-                                  + '<a href="'
-                                  + item.link
-                                  + '">'
-                                  + (item.title ? item.title : item.link)
-                                  + '</a>'
-                                  + '</h4>');
+                          if (link) {
+                              $heading.append($('<a></a>').attr('href', link).text(title));
+                          } else {
+                              $heading.text(title);
+                          }
 
-                          $('#preview').append('<div>'
-                                  + item.description
-                                  + '</div>');
+                          $('#preview').append($heading);
+                          $('#preview').append($('<div></div>').html(item.description || ''));
                       }
                   }
                   else {
