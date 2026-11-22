@@ -4,7 +4,7 @@ RSS feed generator website with user friendly interface.
 
 ![PolitePaul](frontend/frontend/assets/frontend/images/apple-touch-icon-144x144-precomposed.png "PolitePaul")
 
-Source code of an RSS feed generator website with a user friendly interface: enter a page URL, pick the elements that make up a feed, and get a ready-to-use RSS feed. A live deployment is available at [feed.dony.me](https://feed.dony.me).
+Source code based on [https://github.com/taroved/pol](https://github.com/taroved/pol) of an RSS feed generator website with a user friendly interface: enter a page URL, pick the elements that make up a feed, and get a ready-to-use RSS feed. A live deployment is available at [feed.dony.me](https://feed.dony.me).
 
 ## Repository layout
 
