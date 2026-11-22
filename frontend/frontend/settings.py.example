@@ -34,6 +34,12 @@ ALLOWED_HOSTS = [host.strip() for host in
                  os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,[::1]').split(',')
                  if host.strip()]
 
+# The container health check calls http://127.0.0.1:8000/. Keep loopback
+# allowed even when ALLOWED_HOSTS is set to the public domain only.
+for _loopback_host in ('127.0.0.1', 'localhost'):
+    if _loopback_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_loopback_host)
+
 # HTTPS sites behind a reverse proxy need their public origin here for POSTs.
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in
                         os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')

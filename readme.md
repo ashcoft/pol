@@ -125,22 +125,24 @@ The production image and CI are built and tested with:
 
 | Component | Version / requirement |
 | --- | --- |
-| pol | 1.3.1 (`ghcr.io/ashcoft/pol:1.3.1` in production; `latest` in development) |
+| pol | 1.3.1 (source); production image is `latest` or `POL_VERSION` until the next release |
 | Python | 3.15 (`python:3.15-slim`) |
 | Django | 6.1.3 |
 | PostgreSQL | 19 (`postgres:19`) |
 | nginx | 1.28.3 (Ubuntu Server 26.04 LTS host package) |
 | Docker Compose | v2 (required) |
 
-The application version is 1.3.1. `docker-compose.prod.yml` pins
-`ghcr.io/ashcoft/pol:1.3.1`, while `docker-compose.yaml` tracks
-`ghcr.io/ashcoft/pol:latest` for development. Python packages are pinned in
+The application version is 1.3.1. The `1.3.1` image predates the host-nginx
+layout, so `docker-compose.prod.yml` uses `ghcr.io/ashcoft/pol:latest` until a
+release containing this change is published. Set `POL_VERSION` in `.env` to pin
+that release tag. `docker-compose.yaml` also tracks `latest` for development.
+Python packages are pinned in
 `requirements.txt`. The Dockerfile pins the Python base image tag, and both
 compose files pin `postgres:19`. nginx is not in the compose stack: use the
 Ubuntu Server LTS package on the host (1.28.3 on 26.04) with the included
 template. Pin the base image digest if you need byte-for-byte reproducible
-builds. Bump the `1.3.1` tag in `docker-compose.prod.yml` and this table when a
-new release is published.
+builds. Set `POL_VERSION` to the new release tag and update this table when a
+release is published.
 
 System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
@@ -236,8 +238,15 @@ or IP before starting Django.
 
 ## Docker
 
-The production image is `ghcr.io/ashcoft/pol:1.3.1`.
-`docker-compose.yaml` uses `ghcr.io/ashcoft/pol:latest` for development.
+The production image is `ghcr.io/ashcoft/pol:latest` until the next release.
+Set `POL_VERSION` in `.env` to pin a release tag. `docker-compose.yaml` also
+uses `latest` for development.
+
+`latest` is rebuilt by the `Publish Docker image` workflow on every push to
+`main`. After the host-nginx change lands, wait for that workflow to finish
+before pulling `latest`; otherwise use `docker compose up -d --build` so the
+image matches this checkout. The `1.3.1` release predates the host-nginx layout
+and must not be used with this compose file.
 
 ```bash
 git clone https://github.com/ashcoft/pol.git
@@ -275,7 +284,7 @@ the published image and fails explicitly if the registry is unavailable.
 
 The stack starts two services:
 
-* `politepol` - `ghcr.io/ashcoft/pol:latest` (or `:1.3.1` in production);
+* `politepol` - `ghcr.io/ashcoft/pol:latest` (or `POL_VERSION` in production);
   Gunicorn and the downloader in one container, running as the unprivileged
   `appuser`; publishes `127.0.0.1:8000` and `127.0.0.1:1234` on the host
 * `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume mounted
@@ -307,6 +316,7 @@ Compose reads `.env` for these values:
 | `DB_NAME` | `pol` | database name |
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
+| `POL_VERSION` | `latest` | app image tag to pin in production |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
 | `SECRET_KEY` | `change-me-in-production` | set a long random value |
