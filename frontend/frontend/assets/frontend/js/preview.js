@@ -162,10 +162,12 @@
             try {
                 // Inert document: no image or iframe request is made here.
                 var documentRef = new DOMParser().parseFromString(source, 'text/html');
-                var nodes = documentRef.body
-                    ? documentRef.body.querySelectorAll('img[src]') : [];
+                if (!documentRef.body) {
+                    return [];
+                }
+                var nodes = documentRef.body.querySelectorAll('img[src]');
                 for (var index = 0; index < nodes.length; index++) {
-                    var src = nodes[index].getAttribute('src');
+                    var src = nodes.item(index).getAttribute('src');
                     var image = safeUrl(src);
                     if (image && found.indexOf(image) === -1) {
                         found.push(image);
