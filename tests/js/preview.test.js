@@ -83,6 +83,18 @@ test('htmlToText skips template content', () => {
     );
 });
 
+test('htmlToText skips style content containing comparison characters', () => {
+    assert.equal(
+        htmlToText('<style>@media (width < 600px) { .teaser { display: none } }</style>' +
+            '<p>Article summary</p>'),
+        'Article summary'
+    );
+    assert.equal(
+        htmlToText('<style>.arrow::before { content: "<"; }</style><p>Story</p>'),
+        'Story'
+    );
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +

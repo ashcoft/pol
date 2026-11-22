@@ -63,7 +63,9 @@
     }
 
     var HIDDEN_TAGS = ['script', 'style', 'noscript', 'template',
-        'iframe', 'object', 'embed'];
+        'iframe', 'object', 'embed', 'textarea', 'title'];
+    var RAW_TEXT_TAGS = ['script', 'style', 'noscript', 'iframe', 'object',
+        'textarea', 'title'];
     var BLOCK_TAGS = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
         'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'section', 'article',
         'header', 'footer', 'ul', 'ol', 'table', 'tbody', 'thead', 'tfoot',
@@ -74,6 +76,21 @@
 
     function inList(list, value) {
         return list.indexOf(value) !== -1;
+    }
+
+    function findRawTextEnd(source, name, from) {
+        var lower = source.toLowerCase();
+        var needle = '</' + name;
+        var at = lower.indexOf(needle, from);
+        while (at !== -1) {
+            var after = lower.charAt(at + needle.length);
+            if (after === '' || after === '>' || /\s/.test(after)) {
+                var end = source.indexOf('>', at);
+                return end === -1 ? source.length : end + 1;
+            }
+            at = lower.indexOf(needle, at + needle.length);
+        }
+        return -1;
     }
 
     function htmlToText(value) {
@@ -148,6 +165,15 @@
                     }
                 }
             } else if (!closing && inList(HIDDEN_TAGS, name) && !voidTag) {
+                if (inList(RAW_TEXT_TAGS, name)) {
+                    var rawEnd = findRawTextEnd(source, name, pos + 1);
+                    if (rawEnd === -1) {
+                        index = length;
+                        break;
+                    }
+                    index = rawEnd;
+                    continue;
+                }
                 hiddenDepth = 1;
                 hiddenName = name;
                 hiddenNesting = 1;
