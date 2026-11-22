@@ -1,0 +1,122 @@
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:19
+        env:
+          POSTGRES_DB: pol
+          POSTGRES_USER: pol
+          POSTGRES_PASSWORD: pol
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pol -d pol"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_NAME: pol
+      DB_USER: pol
+      DB_PASSWORD: pol
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DEBUG: 'False'
+      SECRET_KEY: e2e-secret-key
+      ALLOWED_HOSTS: 127.0.0.1,localhost
+      CSRF_TRUSTED_ORIGINS: http://127.0.0.1
+      POL_READER_ALLOW_PRIVATE: '1'
+      E2E_BASE_URL: http://127.0.0.1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libpq-dev \
+            libxml2-dev libxslt1-dev libffi-dev libssl-dev nginx
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install -r requirements-e2e.txt
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Prepare the app
+        run: |
+          cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+          python frontend/manage.py migrate --noinput
+          python frontend/manage.py loaddata fields.json
+          python frontend/manage.py collectstatic --noinput
+
+      - name: Start the downloader and Gunicorn
+        run: |
+          python downloader.py 1234 > /tmp/downloader.log 2>&1 &
+          python -m gunicorn frontend.wsgi:application \
+            --pythonpath ./frontend \
+            --bind 127.0.0.1:8000 \
+            --workers 1 \
+            --threads 4 \
+            > /tmp/web.log 2>&1 &
+
+      - name: Start nginx
+        run: |
+          sudo cp nginx/default.site-example /etc/nginx/sites-available/default
+          sudo sed -i \
+            -e 's/listen 80 default_server;/listen 127.0.0.1:80 default_server;/' \
+            -e '/listen \[::\]:80/d' \
+            /etc/nginx/sites-available/default
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+          sudo nginx -t
+          sudo nginx
+
+      - name: Wait for the app
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1/ >/dev/null; then
+              echo "app is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "app did not become ready"
+          exit 1
+
+      - name: Run Playwright tests
+        run: pytest tests/e2e -v
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo '--- gunicorn'
+          cat /tmp/web.log
+          echo '--- downloader'
+          cat /tmp/downloader.log
+          echo '--- nginx'
+          sudo tail -50 /var/log/nginx/error.log
