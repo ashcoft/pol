@@ -51,7 +51,8 @@
             container.appendChild(heading);
 
             var body = documentRef.createElement('div');
-            body.innerHTML = item.description;
+            // Feed descriptions are untrusted; render them as text.
+            body.textContent = item.description;
             container.appendChild(body);
         });
     }

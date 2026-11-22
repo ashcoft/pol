@@ -54,7 +54,7 @@ test('renderItems makes http links anchors and keeps titles as text', () => {
     assert.equal(anchor.tag, 'a');
     assert.equal(anchor.attrs.href, 'https://example.com/a');
     assert.equal(anchor.textContent, '<img src=x onerror=alert(1)>');
-    assert.equal(container.children[1].innerHTML, '<p>Hello</p>');
+    assert.equal(container.children[1].textContent, '<p>Hello</p>');
 });
 
 test('renderItems shows blocked links as plain text', () => {
