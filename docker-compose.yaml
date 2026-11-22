@@ -1,44 +1,59 @@
-version: "3"
-
 services:
   politepol:
+    image: ghcr.io/ashcoft/pol:latest
     build:
       context: .
+    # `docker compose pull` fetches the published image; `--build` builds it
+    # locally and tags it with the same name.
+    pull_policy: ${POL_PULL_POLICY:-missing}
     environment:
-      DB_NAME: 'politepol'
-      DB_USER: 'rooooooooooot'
-      DB_PASSWORD: 'toooooooooooor'
+      DB_NAME: '${DB_NAME:-pol}'
+      DB_USER: '${DB_USER:-pol}'
+      DB_PASSWORD: '${DB_PASSWORD:-change-me}'
       DB_HOST: 'dbpolitepol'
       DB_PORT: '3306'
-      WEB_PORT: '8088'
-      TIME_ZONE: 'America\/Fortaleza'
-      # Hostname/IP you use to reach the app, e.g. 192.168.0.10
+      WEB_PORT: '${WEB_PORT:-8088}'
+      TIME_ZONE: '${TIME_ZONE:-UTC}'
+      DEBUG: '${DEBUG:-False}'
+      SECRET_KEY: '${SECRET_KEY:-change-me-in-production}'
       ALLOWED_HOSTS: '${ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}'
-    image: politepol:latest
+      CSRF_TRUSTED_ORIGINS: '${CSRF_TRUSTED_ORIGINS:-}'
+      GUNICORN_WORKERS: '${GUNICORN_WORKERS:-3}'
+      GUNICORN_THREADS: '${GUNICORN_THREADS:-4}'
+      GUNICORN_TIMEOUT: '${GUNICORN_TIMEOUT:-120}'
     depends_on:
-      - 'dbpolitepol'
-    #command: ["./wait-for-it.sh", "dbpolitepol:3306", "--", "/bin/bash", "./frontend/start.sh"]
-    command: ["./wait-for-it.sh", "dbpolitepol", "/bin/bash", "./frontend/start.sh"]
+      dbpolitepol:
+        condition: service_healthy
     container_name: politepol
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     networks:
       - politepol-network
     ports:
-      - '8088:8088'
+      - '${WEB_PORT:-8088}:${WEB_PORT:-8088}'
 
   dbpolitepol:
     image: mysql:26.10
-    container_name: dbpolitepol
+    container_name: politepol-db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: 'politepol'
-      MYSQL_USER: 'rooooooooooot'
-      MYSQL_PASSWORD: 'toooooooooooor'
-      MYSQL_ROOT_PASSWORD: 'rootpass'
+      MYSQL_DATABASE: '${DB_NAME:-pol}'
+      MYSQL_USER: '${DB_USER:-pol}'
+      MYSQL_PASSWORD: '${DB_PASSWORD:-change-me}'
+      MYSQL_ROOT_PASSWORD: '${DB_ROOT_PASSWORD:-root-change-me}'
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD']
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - politepol-network
     volumes:
-      - ./mysql:/var/lib/mysql
+      - pol_mysql:/var/lib/mysql
+
+volumes:
+  pol_mysql:
 
 networks:
   politepol-network:

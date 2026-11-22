@@ -183,41 +183,109 @@ The template forwards the browser `Host` header so Django's CSRF checks pass beh
 
 ## Docker
 
+The production image is published to GHCR:
+
+```bash
+docker pull ghcr.io/ashcoft/pol:latest
+```
+
+Run the published image with the bundled MySQL:
+
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
-docker compose up -d --build   # or: docker-compose up -d --build
+cp .env.example .env      # edit the values
+docker compose pull
+docker compose up -d
+```
+
+Build the image locally instead:
+
+```bash
+docker compose up -d --build
 ```
 
 The stack starts two services:
 
-* `politepol` -the app container (built from the Dockerfile): `frontend/start.sh` starts nginx, Gunicorn (the Django WSGI app), and the downloader; serves HTTP on port `8088`
-* `dbpolitepol` - MySQL 5.7 with a persisted volume in `./mysql`
+* `politepol` - nginx, Gunicorn (the Django WSGI app) and the downloader in one
+  container; serves HTTP on `WEB_PORT` (default `8088`)
+* `dbpolitepol` - MySQL, with its data in the `pol_mysql` volume
 
-`wait-for-it.sh` waits for MySQL to be ready, then `frontend/start.sh` patches `settings.py` from environment variables, starts nginx, migrates the database, loads `fields.json`, and starts both the downloader and Gunicorn.
+At start, `frontend/start.sh` waits for MySQL, generates `settings.py` from the
+environment, patches nginx's listen port, runs migrations, loads `fields.json`,
+runs `collectstatic`, then starts the downloader, nginx and Gunicorn. Gunicorn
+is installed from `requirements.txt`, so the app never falls back to the Django
+development server. Static files are served by WhiteNoise.
 
-Gunicorn is installed from `requirements.txt`, so the app no longer falls back to
-the Django development server. `GUNICORN_WORKERS` (default `3`),
-`GUNICORN_THREADS` (default `4`) and `GUNICORN_TIMEOUT` (default `120`) tune it.
-Static files are served by WhiteNoise, and `frontend/start.sh` runs
-`collectstatic` before Gunicorn starts, so `/static/` keeps working without the
-Django development server.
+Compose reads `.env` for these values:
 
-Useful compose environment variables: `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `WEB_PORT`, `TIME_ZONE`, `ALLOWED_HOSTS`, `GUNICORN_WORKERS`, `GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `POL_CACHE_BACKEND`, `POL_CACHE_DIR`, `POL_REDIS_URL`, `POL_READER_TIMEOUT`, `POL_READER_MAX_SIZE`, `POL_READER_VERIFY_SSL`.
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DB_NAME` | `pol` | database name |
+| `DB_USER` | `pol` | database user |
+| `DB_PASSWORD` | `change-me` | database password |
+| `DB_ROOT_PASSWORD` | `root-change-me` | MySQL root password |
+| `WEB_PORT` | `8088` | public HTTP port |
+| `TIME_ZONE` | `UTC` | Django timezone |
+| `DEBUG` | `False` | keep `False` in production |
+| `SECRET_KEY` | `change-me-in-production` | set a long random value |
+| `ALLOWED_HOSTS` | loopback | comma-separated public hostnames |
+| `CSRF_TRUSTED_ORIGINS` | empty | e.g. `https://feeds.example.com` |
+| `GUNICORN_WORKERS` | `3` | Gunicorn worker processes |
+| `GUNICORN_THREADS` | `4` | threads per worker |
+| `GUNICORN_TIMEOUT` | `120` | Gunicorn timeout in seconds |
 
-### Access (port 8088)
+Example `.env` for a public HTTPS site:
 
-`ALLOWED_HOSTS` defaults to loopback, so set it to the hostname or IP you use
-to reach the app (comma separated), then open it in a browser, e.g.:
+```dotenv
+DB_PASSWORD=change-me
+DB_ROOT_PASSWORD=root-change-me
+WEB_PORT=8088
+DEBUG=False
+SECRET_KEY=put-a-long-random-value-here
+ALLOWED_HOSTS=feeds.example.com
+CSRF_TRUSTED_ORIGINS=https://feeds.example.com
+```
+
+### Access
 
 ```bash
-ALLOWED_HOSTS=192.168.0.10 docker compose up -d
+http://localhost:8088
 ```
 
+The container's nginx speaks HTTP. Terminate TLS in front of it, for example
+with a host nginx and certbot:
+
+```nginx
+location / {
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_pass http://127.0.0.1:8088;
+}
 ```
-http://localhost:8088
-http://192.168.0.10:8088
+
+Then set `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` to the public HTTPS host.
+
+### Operations
+
+```bash
+# logs
+docker compose logs -f politepol
+
+# upgrade
+docker compose pull
+docker compose up -d
+
+# database backup
+docker compose exec dbpolitepol mysqldump -u root -p"$DB_ROOT_PASSWORD" "$DB_NAME" > pol.sql
 ```
+
+The `Publish Docker image` workflow builds and pushes
+`ghcr.io/ashcoft/pol:latest` on every push to `main`, plus `sha-*` tags and
+semver tags for `v*` releases. GHCR packages are private by default; make the
+package public in the repository's package settings if anonymous pulls are
+needed.
 
 ## Tests
 
