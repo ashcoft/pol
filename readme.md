@@ -9,15 +9,21 @@ Source code of an RSS feed generator website with a user friendly interface: ent
 ## Repository layout
 
 ```
-pol/                       downloader core (Twisted-based HTTP server, feed builder, client, db helpers, log, GC monitor)
+pol/                       downloader core (Twisted HTTP server, feed builder, client, db helpers, log, GC monitor)
 pol/reader/                feed reader: discovery, parsing, full text, caches, output formats, CLI
 frontend/                  Django app (models, views, templates, forms, migrations, fixtures, settings.py.example)
-frontend/frontend/assets/ static assets (LESS/SASS, CSS, JS, images)
-nginx/                     nginx site template (proxies / to Django and /downloader, /feed, /feed1, /read, /discover, /api to the downloader server)
+frontend/frontend/assets/  static assets (LESS/SASS, CSS, JS, images)
+nginx/                     nginx configs: default.site-example (host) and nginx.conf (container)
 tests/                     pytest test suite
-.github/workflows/        CI, release (semantic-release), Snyk security, Pullfrog
-requirements.txt           Python dependencies (root-level)
-Dockerfile, docker-compose.yaml, wait-for-it.sh, downloader.py
+.github/workflows/         CI, Docker publish, release, Snyk, Pullfrog
+requirements.txt           pinned Python dependencies
+Dockerfile                 production image (Python 3.15 + nginx)
+docker-compose.yaml        app + PostgreSQL 19
+docker-compose.prod.yml    pull-only production compose (no build)
+.env.example               production environment template
+.dockerignore
+wait-for-it.sh             optional PostgreSQL wait wrapper
+downloader.py
 ```
 
 ## Feed reader features
@@ -33,8 +39,8 @@ existing feeds:
   or a manual XPath).
 * Build feeds from JSON, HTML or XML documents with hand-written rules.
 * Export as RSS 2.0, JSON Feed, CSV, HTML or JSONP.
-* HTTP caching with memory, redis or diskcache backends and
-  `ETag`/`Last-Modified` revalidation.
+* HTTP caching with memory, redis or the built-in disk cache (`diskcache`
+  backend) and `ETag`/`Last-Modified` revalidation.
 * Replace tracking links with direct links, including known redirect wrappers
   (`l.facebook.com`, `google.com/url`, `news.google.com`, `translate.google.*`,
   `getpocket.com/redirect`, `out.reddit.com`, ...), feedsportal links and
@@ -71,6 +77,9 @@ The downloader server exposes these endpoints (nginx proxies them, see
 `item_author`, `item_image`. Full-text fetching is off by default on HTTP and
 can be enabled with `fulltext=1`.
 
+The examples use the Docker stack's nginx port (`8088`). In development the
+downloader alone listens on `1234`.
+
 Examples:
 
 ```bash
@@ -105,16 +114,36 @@ from item content while keeping their text, `--noref` drops item links, and
 
 Set `POL_CACHE_BACKEND` (or `CACHE_BACKEND` in `settings.py`) to `memory`
 (default), `diskcache`, `redis` or `none`. The `diskcache` backend is a built-in
-JSON-backed disk cache; `POL_CACHE_DIR` selects its directory. `POL_REDIS_URL`
-selects the redis server. The reader uses conditional requests
+JSON-backed disk cache (no extra package); `POL_CACHE_DIR` selects its directory.
+`POL_REDIS_URL` selects the redis server. The reader uses conditional requests
 (`If-None-Match` / `If-Modified-Since`) and falls back to the memory backend
 when Redis is unavailable.
 
-## Requirements
+## Requirements and pinned versions
 
-* Python 3.12+ (3.15 recommended, used by CI and Docker)
-* PostgreSQL 13+ (used by both the frontend and the downloader)
-* System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
+The production image and CI are built and tested with:
+
+| Component | Pinned version |
+| --- | --- |
+| Python | 3.15 (`python:3.15-slim`) |
+| Django | 6.1.3 |
+| PostgreSQL | 19 (`postgres:19`) |
+| nginx | 1.26.x (Debian trixie package inside the image) |
+| Gunicorn | 27.0.1 |
+| WhiteNoise | 6.12.0 |
+| psycopg | 3.3.9 (`psycopg[binary]`) |
+| Scrapy | 2.20.0 |
+| Twisted | 26.10.0 |
+| lxml | 6.1.3 |
+| Redis (optional cache) | 8.1.0 |
+| Docker Compose | v2 |
+
+Python packages are pinned in `requirements.txt`. The Dockerfile pins the Python
+base image, and `docker-compose.yaml` pins `postgres:19`. nginx comes from the
+Debian package inside `python:3.15-slim` (currently 1.26.x). Pin image digests as
+well if you need byte-for-byte reproducible builds.
+
+System build dependencies for `psycopg`, `lxml` and Scrapy, e.g. on Ubuntu/Debian:
 
 ```bash
 sudo apt-get install build-essential pkg-config libpq-dev libxml2-dev libxslt1-dev libffi-dev libssl-dev gettext
@@ -141,7 +170,8 @@ pip install -r requirements.txt
 pip install pytest
 ```
 
-Create the Django settings module (the repo expects `settings.py` next to the `frontend` package; it is git-ignored):
+Create the Django settings module (the repo expects `settings.py` next to the
+`frontend` package; it is git-ignored):
 
 ```bash
 cp frontend/frontend/settings.py.example frontend/frontend/settings.py
@@ -152,6 +182,10 @@ Create the database:
 ```bash
 createdb pol    # or: psql -U postgres -c 'CREATE DATABASE pol;'
 ```
+
+If your local PostgreSQL differs from the settings defaults, export `DB_NAME`,
+`DB_USER`, `DB_PASSWORD`, `DB_HOST` and `DB_PORT` before running the servers.
+The defaults are `pol` / `postgres` / `postgres` on `127.0.0.1:5432`.
 
 Initialise the database:
 
@@ -178,7 +212,8 @@ Run the Django frontend:
 python frontend/manage.py runserver
 ```
 
-For the frontend to reach the downloader (`/downloader`, `/feed`, `/feed1`), install nginx and use the included site template:
+For the frontend to reach the downloader (`/downloader`, `/feed`, `/feed1`),
+install nginx and use the included site template:
 
 ```bash
 sudo apt-get install nginx
@@ -186,48 +221,69 @@ sudo cp nginx/default.site-example /etc/nginx/sites-available/default
 sudo service nginx reload
 ```
 
-The template proxies `/` to Gunicorn (port 8000) and `/downloader`, `/feed`, `/feed1` to the downloader server(port 1234). In Docker, `frontend/start.sh` patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose file exposes.
+The template proxies `/` to the Django server on port 8000 (Gunicorn in
+production) and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`, `/discover`
+and `/api/` to the downloader on port 1234. In Docker, `frontend/start.sh`
+patches nginx's listen port to `$WEB_PORT` (default `8088`), which the compose
+file exposes.
 
-The template forwards the browser `Host` header so Django's CSRF checks pass behind the proxy. If you reach the app by anything other than `localhost`/`127.0.0.1`, export `ALLOWED_HOSTS` (comma separated) with that name or IP before starting Django.
+The template forwards the browser `Host` header so Django's CSRF checks pass
+behind the proxy. If you reach the app by anything other than
+`localhost`/`127.0.0.1`, export `ALLOWED_HOSTS` (comma separated) with that name
+or IP before starting Django.
 
 ## Docker
+
+The production image is `ghcr.io/ashcoft/pol:latest`.
 
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
+cp .env.example .env      # optional; edit the values
 docker compose up -d
 ```
 
-That pulls `ghcr.io/ashcoft/pol:latest`, starts PostgreSQL and the app, and serves
-on <http://localhost:8088>. With Compose v1, run `docker-compose up -d`.
+Compose tries to pull `ghcr.io/ashcoft/pol:latest` first. If the pull succeeds,
+the image is used and nothing is built. If the pull fails (the package is
+private, you are not logged in, or the image is not published yet), Compose
+falls back to building the local `Dockerfile` because the service also has a
+`build:` section. Use `docker compose up -d --build` to force a local build.
 
-The defaults are meant for a first run. Copy `.env.example` to `.env` **before
-the first start** to change the database password, `SECRET_KEY`, public
-hostname and TLS origin:
+If you never want the build fallback, use the pull-only production file:
 
 ```bash
-cp .env.example .env
+docker compose -f docker-compose.prod.yml up -d
+```
+
+It has no `build:` section, so Compose can only pull the published image.
+
+The GHCR package is private by default. Log in once with a token that has
+`read:packages`:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u ashcoft --password-stdin
+docker compose pull
 docker compose up -d
 ```
 
-Build the image locally instead of pulling it:
-
-```bash
-docker compose up -d --build
-```
+Set the package visibility to public in the GitHub package settings if you want
+anonymous pulls.
 
 The stack starts two services:
 
-* `politepol` - nginx, Gunicorn (the Django WSGI app) and the downloader in one
-  container; serves HTTP on `WEB_PORT` (default `8088`)
-* `dbpolitepol` - PostgreSQL, with its data in the `pol_pg` volume
+* `politepol` - `ghcr.io/ashcoft/pol:latest`; nginx, Gunicorn and the downloader
+  in one container, running as the unprivileged `appuser`; HTTP on `WEB_PORT`
+  (default `8088`)
+* `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume
 
-At start, `frontend/start.sh` waits for PostgreSQL, generates `settings.py`
-from the environment, patches nginx's listen port, runs migrations and loads
-`fields.json`, then starts the downloader, nginx and Gunicorn. `collectstatic`
-runs during the image build. Gunicorn
-is installed from `requirements.txt`, so the app never falls back to the Django
-development server. Static files are served by WhiteNoise.
+At start, `frontend/start.sh` waits for PostgreSQL, patches nginx's listen port,
+runs `migrate` and `loaddata`, then starts the downloader, nginx and Gunicorn.
+`settings.py` is generated at image build and reads the environment at import.
+`collectstatic` runs at image build; WhiteNoise serves `/static/`.
+
+Compose fixes `DB_HOST=dbpolitepol` and `DB_PORT=5432`; PostgreSQL always listens
+on 5432 inside the container. The app's settings still read `DB_HOST`/`DB_PORT`
+for non-Docker runs.
 
 Compose reads `.env` for these values:
 
@@ -236,7 +292,6 @@ Compose reads `.env` for these values:
 | `DB_NAME` | `pol` | database name |
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
-| `DB_PORT` | `5432` | database port |
 | `WEB_PORT` | `8088` | public HTTP port |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
@@ -288,24 +343,47 @@ docker compose logs -f politepol
 docker compose pull
 docker compose up -d
 
+# pull-only production file
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
 # database backup
-docker compose exec dbpolitepol pg_dump -U "$DB_USER" "$DB_NAME" > pol.sql
+docker compose exec dbpolitepol pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > pol.sql
 ```
 
-The `Publish Docker image` workflow builds and pushes
-`ghcr.io/ashcoft/pol:latest` on every push to `main`, plus `sha-*` tags and
-semver tags for `v*` releases. GHCR packages are private by default; make the
-package public in the repository's package settings if anonymous pulls are
-needed.
+### Publishing the image (maintainers)
+
+`.github/workflows/docker-publish.yml` runs on pushes to `main` and `v*` tags:
+
+- `ghcr.io/ashcoft/pol:latest` on the default branch
+- `ghcr.io/ashcoft/pol:sha-<short>` on every push
+- `ghcr.io/ashcoft/pol:<version>` and `<major>.<minor>` for `v*` tags
+
+The package must be linked to the `ashcoft/pol` repository. If it is not, the
+workflow fails with `denied: permission_denied: read_package`. Link it in the
+package settings (Repository source -> Connect repository), then re-run the
+workflow. Packages are private by default.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `docker compose up` starts a build | GHCR pull failed (private package, not logged in, or not published) | `docker login ghcr.io`, then `docker compose pull`; or use `--build` for a local build |
+| `Head ... unauthorized` on pull | Private package and no login | Log in with a `read:packages` token |
+| `permission_denied: read_package` in Actions | Package is not linked to the repository | Link the package in its settings and re-run the workflow |
+| App waits for the database and exits | PostgreSQL not ready or wrong credentials | `docker compose logs dbpolitepol`; check `DB_*` in `.env` |
 
 ## Tests
 
 ```bash
 cp frontend/frontend/settings.py.example frontend/frontend/settings.py
+pip install pytest
 pytest tests/
 ```
 
-CI runs the same tests, linting checks, and a Docker image build on pull requests and pushes to `main`. Releases are cut automatically by the Release workflow (python-semantic-release) when CI passes on `main`.
+CI runs `pytest -v tests/` on Python 3.15, plus linting, a Docker image build and
+an import check inside the image. The tests do not need a database; the Django
+tests load settings only.
 
 ## License
 
