@@ -13,3 +13,4 @@ tests
 
 .env
 nginx
+pol-image.tar.gz
