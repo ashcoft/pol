@@ -53,6 +53,17 @@ test('htmlToText ignores a quoted > inside a tag', () => {
     assert.equal(htmlToText('<p title="Score > 10">Final score</p>'), 'Final score');
 });
 
+test('htmlToText separates isolated table cells', () => {
+    assert.equal(htmlToText('<tr><td>Product</td><td>Price</td></tr>'), 'Product Price');
+});
+
+test('htmlToText skips noscript fallback text', () => {
+    assert.equal(
+        htmlToText('<noscript><p>Please enable JavaScript</p></noscript><p>Real content</p>'),
+        'Real content'
+    );
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +

@@ -68,36 +68,6 @@
             ' ');
     }
 
-    var SKIP_TAGS = /^(?:script|style|noscript|template|iframe|object|embed)$/;
-    var BLOCK_TAGS = /^(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre|section|article|header|footer|ul|ol|table|figure|figcaption)$/;
-
-    function collectText(node) {
-        var text = '';
-        for (var child = node.firstChild; child; child = child.nextSibling) {
-            if (child.nodeType === 3) {
-                text += child.nodeValue;
-            } else if (child.nodeType === 1) {
-                var tag = child.nodeName.toLowerCase();
-                if (SKIP_TAGS.test(tag)) {
-                    continue;
-                }
-                if (tag === 'br') {
-                    text += ' ';
-                    continue;
-                }
-                var block = BLOCK_TAGS.test(tag);
-                if (block) {
-                    text += ' ';
-                }
-                text += collectText(child);
-                if (block) {
-                    text += ' ';
-                }
-            }
-        }
-        return text;
-    }
-
     function stripTags(value) {
         var text = '';
         var inTag = false;
@@ -129,41 +99,13 @@
         return text;
     }
 
-    function htmlToText(value, doc) {
+    function htmlToText(value) {
         if (!value) {
             return '';
         }
-        var documentRef = doc || (typeof document !== 'undefined' ? document : null);
-        if (documentRef && typeof documentRef.createElement === 'function') {
-            try {
-                // A template parses an arbitrary fragment in place, keeping
-                // table cells and <noscript> boundaries that full-document
-                // parsing would drop.
-                var template = documentRef.createElement('template');
-                template.innerHTML = String(value);
-                if (template.content) {
-                    return String(collectText(template.content))
-                        .replace(/\s+/g, ' ').trim();
-                }
-            } catch (ignore) {
-                // Fall through to the parser paths below.
-            }
-        }
-        if (typeof DOMParser !== 'undefined') {
-            try {
-                // DOMParser creates an inert document, so parsing does not
-                // fetch <img>/<iframe> resources before safeUrl runs.
-                var parsedDocument = new DOMParser().parseFromString(
-                    String(value), 'text/html');
-                if (!parsedDocument.body) {
-                    return '';
-                }
-                return String(collectText(parsedDocument.body))
-                    .replace(/\s+/g, ' ').trim();
-            } catch (ignore) {
-                // Fall back to the tag-stripping path below.
-            }
-        }
+        // Work on the string, never on live DOM: block and cell tags become
+        // spaces, dangerous blocks are removed, and the result is only ever
+        // assigned to textContent.
         return decodeEntities(stripTags(stripDangerousBlocks(value)))
             .replace(/\s+/g, ' ').trim();
     }
@@ -207,7 +149,7 @@
         return found;
     }
 
-    function previewItems(feed, doc) {
+    function previewItems(feed) {
         var items = (feed && feed.items) || [];
         return items.map(function (item) {
             var description = item.description || '';
@@ -220,7 +162,7 @@
                 title: item.title ? String(item.title) : String(item.link || ''),
                 link: safeUrl(item.link),
                 description: description,
-                text: htmlToText(description, doc),
+                text: htmlToText(description),
                 images: images
             };
         });
@@ -231,7 +173,7 @@
         if (!container || !documentRef) {
             return;
         }
-        previewItems(feed, documentRef).forEach(function (item) {
+        previewItems(feed).forEach(function (item) {
             var heading = documentRef.createElement('h4');
             if (item.link) {
                 var anchor = documentRef.createElement('a');
