@@ -381,6 +381,7 @@ workflow. Packages are private by default.
 | `Head ... unauthorized` on pull | Private package and no login | Log in with a `read:packages` token |
 | `permission_denied: read_package` in Actions | Package is not linked to the repository | Link the package in its settings and re-run the workflow |
 | App waits for the database and exits | PostgreSQL not ready or wrong credentials | `docker compose logs dbpolitepol`; check `DB_*` in `.env` |
+| `dbpolitepol` exits with "PostgreSQL data in /var/lib/postgresql/data" | Volume created with the old mount | Dump it first if you need the data, then `docker compose down -v` and start fresh |
 
 ## Tests
 
