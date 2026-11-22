@@ -34,7 +34,7 @@ services:
       - '${WEB_PORT:-8088}:${WEB_PORT:-8088}'
 
   dbpolitepol:
-    image: postgres:17
+    image: postgres:19
     container_name: politepol-db
     restart: unless-stopped
     environment:
