@@ -59,11 +59,18 @@
             ' ');
     }
 
+    function addBlockSeparators(value) {
+        return String(value || '')
+            .replace(/<br\b[^>]*>/gi, ' ')
+            .replace(/<\/?(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre|section|article|header|footer|ul|ol|table|figure|figcaption)\b[^>]*>/gi,
+                ' ');
+    }
+
     function htmlToText(value) {
         if (!value) {
             return '';
         }
-        var source = stripDangerousBlocks(value);
+        var source = addBlockSeparators(stripDangerousBlocks(value));
         if (typeof DOMParser !== 'undefined') {
             try {
                 var documentRef = new DOMParser().parseFromString(source, 'text/html');

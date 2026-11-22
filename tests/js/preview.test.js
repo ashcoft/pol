@@ -44,6 +44,11 @@ test('htmlToText strips markup and decodes entities', () => {
     assert.equal(htmlToText('<script>alert(1)</script>Safe'), 'Safe');
 });
 
+test('htmlToText keeps a space between blocks and line breaks', () => {
+    assert.equal(htmlToText('<p>Hello</p><p>world</p>'), 'Hello world');
+    assert.equal(htmlToText('one<br>two'), 'one two');
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +

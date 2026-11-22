@@ -43,6 +43,9 @@ def _as_text(value):
 # parser accepts, so drop them before serialising the feed.
 _XML_INVALID_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
 _URL_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):', re.IGNORECASE)
+# Browsers ignore ASCII whitespace and C0 controls inside a URL scheme, so
+# `java&#9;script:` must be detected as JavaScript, not as a relative URL.
+_URL_CONTROL_RE = re.compile(r'[\x00-\x20\x7f]')
 _URL_ATTRS = frozenset({
     'href', 'src', 'poster', 'action', 'background',
     'data-src', 'data-original', 'data-lazy-src',
@@ -56,7 +59,8 @@ def _xml_text(value):
 
 
 def _url_scheme(value):
-    match = _URL_SCHEME_RE.match((value or '').strip())
+    cleaned = _URL_CONTROL_RE.sub('', _as_text(value or ''))
+    match = _URL_SCHEME_RE.match(cleaned)
     return match.group(1).lower() if match else ''
 
 
@@ -80,12 +84,52 @@ def _usable_url(value):
     return not value.lower().startswith(('javascript:', 'data:', 'vbscript:'))
 
 
+def _parse_srcset(value):
+    """Yield ``(url, descriptor)`` pairs using HTML srcset candidate boundaries."""
+    text = _as_text(value or '')
+    position = 0
+    length = len(text)
+    while position < length:
+        while position < length and (text[position].isspace() or text[position] == ','):
+            position += 1
+        if position >= length:
+            break
+
+        start = position
+        while position < length and not text[position].isspace():
+            position += 1
+        raw_url = text[start:position]
+        url = raw_url.rstrip(',')
+        if not url:
+            continue
+
+        if raw_url.endswith(','):
+            # The comma ended this candidate, so it has no descriptor.
+            descriptor = ''
+        else:
+            descriptor_start = position
+            depth = 0
+            while position < length:
+                char = text[position]
+                if char == '(':
+                    depth += 1
+                elif char == ')' and depth:
+                    depth -= 1
+                elif char == ',' and not depth:
+                    break
+                position += 1
+            descriptor = text[descriptor_start:position].strip()
+            if position < length and text[position] == ',':
+                position += 1
+
+        yield url, descriptor
+
+
 def _sanitize_srcset(value):
     candidates = []
-    for candidate in (value or '').split(','):
-        parts = candidate.strip().split()
-        if parts and _usable_url(parts[0]):
-            candidates.append(' '.join(parts))
+    for url, descriptor in _parse_srcset(value):
+        if _usable_url(url):
+            candidates.append((url + ' ' + descriptor).strip())
     return ', '.join(candidates)
 
 
@@ -120,7 +164,7 @@ def _sanitize_urls(fragment):
                 changed = True
     if not changed:
         return fragment
-    return (root.text or '') + ''.join(
+    return html.escape(root.text or '') + ''.join(
         etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
@@ -156,7 +200,7 @@ def _normalize_images(fragment, base_url):
             changed = True
     if not changed:
         return fragment
-    return (root.text or '') + ''.join(
+    return html.escape(root.text or '') + ''.join(
         etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
@@ -294,9 +338,12 @@ class Feed(object):
             return ''
         try:
             base_url = w3lib.html.get_base_url(html, doc_url)
+        except ValueError:
+            base_url = doc_url
+        try:
             resolved = six.moves.urllib.parse.urljoin(base_url, url)
         except ValueError:
-            resolved = url
+            return ''
         return resolved if _usable_url(resolved) else ''
 
     def buildFeed(self, selector, page_unicode, feed_config):
@@ -355,17 +402,25 @@ class Feed(object):
         for item in items:
             title = item['title'] if 'title' in item else ''
             title = _xml_text(re.sub(r'<[^>]+>', '', title)).strip()
-            desc = item['description'] if 'description' in item else ''
-            desc = _sanitize_urls(_normalize_images(desc, base_url))
-            desc = _xml_text(desc)
+            raw_desc = item['description'] if 'description' in item else ''
+            # Keep the fallback GUID on the legacy description pipeline. Only
+            # the published description is sanitized, so a sanitizer change
+            # does not make readers treat an old post as new.
+            legacy_desc = _normalize_images(raw_desc, base_url)
+            desc = _xml_text(_sanitize_urls(legacy_desc))
             image = item.get('image')
             if image:
                 image = self._build_link(page_unicode, feed_config['uri'], image)
                 # Only absolute http(s) images can become enclosures.
                 if not _safe_url(image):
                     image = ''
-                elif image not in desc:
-                    desc = '<img src="%s" alt="" />' % html.escape(image, quote=True) + desc
+                else:
+                    if image not in legacy_desc:
+                        legacy_desc = ('<img src="%s" alt="" />' % html.escape(image)
+                                       + legacy_desc)
+                    if image not in desc:
+                        desc = ('<img src="%s" alt="" />'
+                                % html.escape(image, quote=True) + desc)
             time = (_parse_date(item.get('date')) or _as_utc(item.get('time'))
                     or datetime.datetime.now(datetime.timezone.utc))
             if 'link' in item:
@@ -374,7 +429,7 @@ class Feed(object):
                     link = ''
             else:
                 # md5 keeps published identities of link-less items stable.
-                identity = _xml_text(title + desc)
+                identity = _xml_text(title + legacy_desc)
                 if not identity:
                     identity = _xml_text((item.get('date') or '') + (item.get('image') or ''))
                 fragment = md5(identity.encode('utf-8'), usedforsecurity=False).hexdigest()  # nosec B324  # nosemgrep
