@@ -24,10 +24,12 @@ FEED_MIME_TYPES = frozenset({
     'application/feed+json',
 })
 
-COMMON_PATHS = (
-    '/feed', '/feed/', '/rss', '/rss.xml', '/atom.xml', '/feed.xml',
-    '/index.xml', '/feeds/posts/default', '/blog/feed', '/?feed=rss2',
-    '/feed.json',
+# Relative paths tried under the page first, then under the origin. The list
+# matches feedfinder-ts and keeps the blogspot paths pol already supported.
+WELL_KNOWN_PATHS = (
+    'feed', 'feed/', 'rss', 'rss.xml', 'atom.xml', 'feed.xml', 'index.xml',
+    'atom.json', 'feed.json', 'rss.json', 'index.json', 'rss/',
+    'feeds/posts/default', 'blog/feed', '?feed=rss2',
 )
 
 _FEED_WORD_RE = re.compile(r'\b(?:rss|atom|feed)\b', re.IGNORECASE)
@@ -44,9 +46,16 @@ class FeedRef:
         return {'title': self.title, 'url': self.url, 'type': self.type}
 
 
-def _origin(url):
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, '', '', ''))
+def _dedupe_refs(refs):
+    unique = []
+    seen = set()
+    for ref in refs:
+        url = clean_url(ref.url)
+        if url in seen:
+            continue
+        seen.add(url)
+        unique.append(ref)
+    return unique
 
 
 def discover_from_html(html_text, base_url):
@@ -88,15 +97,40 @@ def discover_from_html(html_text, base_url):
     return refs
 
 
-def common_candidates(base_url):
-    """Well-known feed paths on the same origin as ``base_url``."""
-    origin = _origin(base_url)
+def _well_known_refs(base_url, under_page):
+    """Well-known feed paths, either relative to the page or to its origin."""
+    if under_page:
+        base = base_url
+    else:
+        parts = urlsplit(base_url)
+        base = urlunsplit((parts.scheme, parts.netloc, '/', '', ''))
     page = clean_url(base_url)
     refs = []
-    for path in COMMON_PATHS:
-        url = origin + path
-        if url != page:
-            refs.append(FeedRef(url=url, source='guess'))
+    seen = set()
+    for path in WELL_KNOWN_PATHS:
+        url = clean_url(urljoin(base, path))
+        if url == page or url in seen:
+            continue
+        seen.add(url)
+        refs.append(FeedRef(url=url, source='guess'))
+    return refs
+
+
+def page_candidates(base_url):
+    """Well-known feed paths relative to the page URL."""
+    return _well_known_refs(base_url, True)
+
+
+def root_candidates(base_url):
+    """Well-known feed paths on the page's origin, the fallback pass."""
+    return _well_known_refs(base_url, False)
+
+
+def common_candidates(base_url):
+    """Every well-known candidate, page-relative first, then the origin."""
+    refs = page_candidates(base_url)
+    seen = {ref.url for ref in refs}
+    refs.extend(ref for ref in root_candidates(base_url) if ref.url not in seen)
     return refs
 
 
@@ -168,16 +202,15 @@ def find_feeds(url, fetcher=None, verify=True, limit=10):
     refs = []
     if response.is_html:
         refs.extend(discover_from_html(response.text, response.url))
-    refs.extend(common_candidates(response.url))
 
     if not verify:
-        unique = []
-        seen = set()
-        for ref in refs:
-            url = clean_url(ref.url)
-            if url in seen:
-                continue
-            seen.add(url)
-            unique.append(ref)
-        return unique[:limit]
-    return _verify(refs, fetcher, limit)
+        return _dedupe_refs(refs + common_candidates(response.url))[:limit]
+
+    # Well-known paths are tried under the page first, then under the origin,
+    # the way feedfinder-ts falls back when a subpath has no feed of its own.
+    verified = _verify(refs + page_candidates(response.url), fetcher, limit)
+    if len(verified) < limit and not any(ref.source == 'guess' for ref in verified):
+        verified = _dedupe_refs(
+            verified + _verify(root_candidates(response.url), fetcher,
+                               limit - len(verified)))
+    return verified[:limit]

@@ -161,3 +161,82 @@ def test_process_falls_back_after_dead_advertised_feed(http_server):
     })
     result = process(http_server.base_url + '/', options=Options(fulltext=False))
     assert result.feed.title == 'Example feed'
+
+
+def _ordered_feed():
+    from datetime import datetime, timezone
+
+    from pol.reader.model import Feed, Item
+
+    feed = Feed(title='Ordered', url='https://example.com/feed')
+    feed.items = [
+        Item(title='old', link='https://example.com/old',
+             date=datetime(2026, 11, 20, 10, tzinfo=timezone.utc)),
+        Item(title='new', link='https://example.com/new',
+             date=datetime(2026, 11, 21, 10, tzinfo=timezone.utc)),
+        Item(title='middle', link='https://example.com/middle',
+             date=datetime(2026, 11, 20, 12, tzinfo=timezone.utc)),
+    ]
+    return feed
+
+
+def test_items_to_process_order_variants():
+    from pol.reader.pipeline import _items_to_process
+
+    feed = _ordered_feed()
+    titles = lambda items: [item.title for item in items]
+
+    assert titles(_items_to_process(feed, Options(max_items=2, order='first'))) == [
+        'old', 'new']
+    assert titles(_items_to_process(feed, Options(max_items=2, order='last'))) == [
+        'new', 'middle']
+    assert titles(_items_to_process(feed, Options(max_items=2, order='newest'))) == [
+        'new', 'middle']
+    assert titles(_items_to_process(feed, Options(max_items=2, order='oldest'))) == [
+        'old', 'middle']
+    assert _items_to_process(feed, Options(max_items=0)) == []
+
+
+def test_fix_items_normalises_titles_and_recovers_links():
+    from pol.reader.model import Feed, Item
+    from pol.reader.pipeline import _fix_items
+
+    feed = Feed(title='T', url='https://en.wikipedia.org/w/api.php?action=query&feedformat=atom')
+    feed.items = [Item(
+        title='THIS TITLE IS SHOUTING LOUDLY',
+        link='https://translate.google.de/translate?u=https%3A%2F%2Fexample.com%2Farticle',
+        summary='<p><b><a href="https://en.wikipedia.org/wiki/Real">Real</a></b></p>',
+    )]
+    _fix_items(feed, Options())
+    assert feed.items[0].title == 'This Title Is Shouting Loudly'
+    # The Wikipedia daily-highlight link wins over the wrapper link.
+    assert feed.items[0].link == 'https://en.wikipedia.org/wiki/Real'
+
+
+def test_fix_items_uses_the_reddit_link():
+    from pol.reader.model import Feed, Item
+    from pol.reader.pipeline import _fix_items
+
+    feed = Feed(title='r/test', url='https://www.reddit.com/r/test/.rss')
+    feed.items = [Item(
+        title='Post',
+        link='https://www.reddit.com/r/test/comments/1/post/',
+        content='<p><a href="https://example.com/story">[link]</a></p>',
+    )]
+    _fix_items(feed, Options())
+    assert feed.items[0].link == 'https://example.com/story'
+
+
+def test_fix_items_unwraps_and_decodes_links():
+    from pol.reader.model import Feed, Item
+    from pol.reader.pipeline import _fix_items
+
+    feed = Feed(title='T', url='https://example.com/feed')
+    feed.items = [
+        Item(title='A', link='https://getpocket.com/redirect?url=https%3A%2F%2Fexample.com%2Fa'),
+        Item(title='B',
+             link='https://feedsportal.com/A0M0example0B0com0C0b/story01.htm'),
+    ]
+    _fix_items(feed, Options())
+    assert feed.items[0].link == 'https://example.com/a'
+    assert feed.items[1].link == 'https://example.com/b'

@@ -2,21 +2,30 @@
 
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from urllib.parse import urljoin, urlsplit
 
 from lxml import etree
 from lxml import html as lxml_html
 
 from .cache import HttpCache, make_cache
-from .discover import FeedRef, common_candidates, discover_from_html, find_feeds
+from .discover import (
+    FeedRef,
+    discover_from_html,
+    find_feeds,
+    page_candidates,
+    root_candidates,
+)
 from .errors import FetchError, InvalidURLError, ParseError
 from .http import DEFAULT_MAX_SIZE, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT, Fetcher
 from .jsonfeeds import Rules, parse_custom, rules_for_url
 from .model import Feed
 from .output import format_feed
-from .parse import absolutize, html_to_text, parse_feed
+from .parse import absolutize, html_to_text, parse_feed, strip_links
 from .readability import extract
-from .urls import clean_url, is_http_url, normalize_url
+from .urls import clean_url, decode_feedsportal, is_http_url, normalize_url, unwrap_redirector
 
 
 @dataclass
@@ -32,6 +41,12 @@ class Options:
     indent: bool = False
     callback: str | None = None
     search: str | None = None
+    post: str | None = None
+    order: str = 'first'
+    firstlink: bool = False
+    nolink: bool = False
+    noref: bool = False
+    silent: bool = False
     xpath: str | None = None
     items: str | None = None
     item_link: str | None = None
@@ -117,7 +132,8 @@ def _feed_from_page(response, fetcher, options):
     if not response.is_html:
         raise ParseError('Document is neither a feed nor an HTML page')
     refs = discover_from_html(response.text, response.url)
-    refs.extend(common_candidates(response.url))
+    refs.extend(page_candidates(response.url))
+    refs.extend(root_candidates(response.url))
     seen = set()
     candidates = []
     for ref in refs:
@@ -125,7 +141,7 @@ def _feed_from_page(response, fetcher, options):
             continue
         seen.add(ref.url)
         candidates.append(ref)
-    for ref in candidates[:12]:
+    for ref in candidates[:20]:
         try:
             candidate = fetcher.fetch(ref.url, force=options.force)
             if not candidate.ok:
@@ -152,9 +168,101 @@ def _extract_with_xpath(html_text, url, xpath):
     return absolutize(fragment, url)
 
 
-def _fill_fulltext(feed, fetcher, options):
+_WIKIPEDIA_ATOM = 'http*://*.wikipedia.org/w/api.php?*&feedformat=atom'
+
+
+def _fragment_root(fragment):
+    if not fragment or '<' not in fragment:
+        return None
+    try:
+        return lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError, TypeError):
+        return None
+
+
+def _first_href(fragment):
+    root = _fragment_root(fragment)
+    if root is None:
+        return ''
+    for anchor in root.iter('a'):
+        href = (anchor.get('href') or '').strip()
+        if href:
+            return href
+    return ''
+
+
+def _wikipedia_link(fragment):
+    root = _fragment_root(fragment)
+    if root is None:
+        return ''
+    hrefs = root.xpath('//b/a/@href')
+    return hrefs[0].strip() if hrefs else ''
+
+
+def _reddit_link(fragment):
+    root = _fragment_root(fragment)
+    if root is None:
+        return ''
+    for anchor in root.iter('a'):
+        if ' '.join(anchor.text_content().split()) == '[link]':
+            return (anchor.get('href') or '').strip()
+    return ''
+
+
+def _fix_items(feed, options):
+    """Port morss's ItemFix: normalise titles and recover the real item link."""
+    feed_url = feed.url or feed.link or ''
+    wikipedia = fnmatch.fnmatch(feed_url, _WIKIPEDIA_ATOM)
+    reddit = (urlsplit(feed_url).hostname or '').lower() == 'www.reddit.com'
+    for item in feed.items:
+        if item.title and len(item.title) > 20 and item.title.isupper():
+            item.title = item.title.title()
+        if wikipedia:
+            link = _wikipedia_link(item.summary)
+            if link:
+                item.link = link
+        if options.firstlink:
+            link = _first_href(item.summary) or _first_href(item.content)
+            if link:
+                item.link = link
+        if item.link:
+            item.link = decode_feedsportal(unwrap_redirector(item.link))
+        if reddit and item.content:
+            link = _reddit_link(item.content)
+            if link:
+                item.link = link
+        if item.link:
+            item.link = urljoin(feed_url, item.link)
+
+
+def _items_to_process(feed, options):
+    """Items to enrich, in processing order, without reordering the output."""
     limit = max(0, int(options.max_items))
-    for item in feed.items[:limit]:
+    if limit == 0:
+        return []
+    items = list(feed.items)
+    order = (options.order or 'first').lower()
+    if order == 'last':
+        return items[-limit:]
+    if order in ('newest', 'oldest'):
+        now = datetime.now(timezone.utc)
+        ordered = sorted(items, key=lambda item: item.date or now)
+        if order == 'newest':
+            ordered.reverse()
+        return ordered[:limit]
+    return items[:limit]
+
+
+def _apply_item_actions(feed, options):
+    for item in feed.items:
+        if options.nolink and item.content:
+            item.content = strip_links(item.content)
+        if options.noref:
+            item.link = ''
+
+
+def _fill_fulltext(feed, fetcher, options):
+    for item in _items_to_process(feed, options):
         if not item.link or not is_http_url(item.link):
             continue
         if not options.clip and len(html_to_text(item.content or item.summary)) > 1000:
@@ -175,8 +283,7 @@ def _fill_fulltext(feed, fetcher, options):
 
 
 def _resolve_links(feed, fetcher, options):
-    limit = max(0, int(options.max_items))
-    for item in feed.items[:limit]:
+    for item in _items_to_process(feed, options):
         if not item.link or not is_http_url(item.link):
             continue
         try:
@@ -196,7 +303,13 @@ def process(url, options=None, fetcher=None):
     url = normalize_url(url)
     fetcher = fetcher or _build_fetcher(options)
 
-    response = fetcher.fetch(url, force=options.force, allow_meta=options.follow_meta)
+    response = fetcher.fetch(
+        url,
+        force=options.force,
+        allow_meta=options.follow_meta,
+        data=options.post.encode('utf-8') if options.post is not None else None,
+        method='POST' if options.post is not None else 'GET',
+    )
     if response.status >= 400:
         raise FetchError('Remote server returned HTTP %s' % response.status,
                          url=url, status=response.status)
@@ -215,12 +328,14 @@ def process(url, options=None, fetcher=None):
     if not feed.link:
         feed.link = response.url or url
 
+    _fix_items(feed, options)
     if options.search:
         feed.items = [item for item in feed.items if _matches(item, options.search)]
     if options.resolve:
         _resolve_links(feed, fetcher, options)
     if options.fulltext and not options.proxy:
         _fill_fulltext(feed, fetcher, options)
+    _apply_item_actions(feed, options)
 
     text, content_type = format_feed(
         feed, options.format, indent=options.indent,

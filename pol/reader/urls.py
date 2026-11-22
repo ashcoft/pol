@@ -32,12 +32,22 @@ _REDIRECT_WRAPPERS = {
     'm.facebook.com': ('u',),
     'l.instagram.com': ('u',),
     'away.vk.com': ('to',),
-    'www.google.com': ('q', 'url'),
-    'google.com': ('q', 'url'),
     'out.reddit.com': ('url',),
     'href.li': ('',),
     'anonym.to': ('',),
     'nullrefer.com': ('',),
+}
+
+_GOOGLE_HOST_RE = re.compile(r'^(?:www\.)?google\.[a-z.]+$', re.IGNORECASE)
+
+# feedsportal hides the real URL in a /<token>/story01.htm path, one encoded
+# character per pair. The map is morss's, so an existing feed keeps resolving.
+_FEEDSPORTAL_RE = re.compile(r'/([0-9a-zA-Z]{20,})/story01\.htm$')
+_FEEDSPORTAL_CODES = {
+    'A': '0', 'B': '.', 'C': '/', 'D': '?', 'E': '-', 'F': '=', 'G': '&',
+    'H': ',', 'I': '_', 'J': '%', 'K': '+', 'L': 'http://', 'M': 'https://',
+    'N': '.com', 'O': '.co.uk', 'P': ';', 'Q': '|', 'R': ':', 'S': 'www.',
+    'T': '#', 'U': '$', 'V': '~', 'W': '!', 'X': '(', 'Y': ')', 'Z': 'Z',
 }
 
 
@@ -109,11 +119,28 @@ def strip_tracking(url: str) -> str:
                        '&'.join(kept), parts.fragment))
 
 
+def _wrapper_keys(host, path):
+    """Query keys holding the destination for this wrapper host, if it is one."""
+    keys = _REDIRECT_WRAPPERS.get(host)
+    if keys:
+        return keys
+    if _GOOGLE_HOST_RE.match(host) and path.startswith('/url'):
+        # morss matches google.<any TLD>/url, not only google.com.
+        return ('q', 'url')
+    if host == 'news.google.com' and path.startswith('/news/url'):
+        return ('url',)
+    if host == 'getpocket.com' and path.startswith('/redirect'):
+        return ('url',)
+    if host.startswith('translate.google.') and path.startswith('/translate'):
+        return ('u',)
+    return None
+
+
 def unwrap_redirector(url: str) -> str:
     """Return the destination hidden in a known redirect wrapper, if any."""
     parts = urlsplit(url)
     host = (parts.hostname or '').lower()
-    keys = _REDIRECT_WRAPPERS.get(host)
+    keys = _wrapper_keys(host, parts.path)
     if not keys:
         return url
 
@@ -129,6 +156,24 @@ def unwrap_redirector(url: str) -> str:
         return url
     try:
         return normalize_url(target)
+    except InvalidURLError:
+        return url
+
+
+def decode_feedsportal(url: str) -> str:
+    """Decode a feedsportal ``/<token>/story01.htm`` link into its real URL."""
+    parts = urlsplit(url)
+    match = _FEEDSPORTAL_RE.search(parts.path)
+    if not match:
+        return url
+    decoded = ''.join(
+        _FEEDSPORTAL_CODES.get(pair[0], pair[0]) + pair[1:]
+        for pair in match.group(1).split('0')[1:]
+    )
+    if not _looks_like_target_url(decoded):
+        return url
+    try:
+        return normalize_url(decoded)
     except InvalidURLError:
         return url
 

@@ -27,6 +27,15 @@ def build_parser():
     action = parser.add_argument_group('action')
     action.add_argument('--discover', action='store_true',
                         help='list feeds found on the page as JSON')
+    action.add_argument('--post', metavar='STRING',
+                        help='POST this body to the feed URL instead of a GET')
+    action.add_argument('--order', default='first', choices=('first', 'last', 'newest', 'oldest'),
+                        help='which items to enrich when max-items is reached (default: first)')
+    action.add_argument('--firstlink', action='store_true',
+                        help='use the first <a> in the description as the item link')
+    action.add_argument('--nolink', action='store_true',
+                        help='drop links from item content but keep their text')
+    action.add_argument('--noref', action='store_true', help='drop item links')
     action.add_argument('--proxy', action='store_true', help='do not fetch full text')
     action.add_argument('--fulltext', dest='fulltext', action='store_true', default=True,
                         help='fetch full text (default)')
@@ -66,6 +75,8 @@ def build_parser():
     custom.add_argument('--item-image', help='rule for the item image')
 
     misc = parser.add_argument_group('misc')
+    misc.add_argument('--silent', action='store_true',
+                      help='do not print the feed (useful while debugging)')
     misc.add_argument('--timeout', type=float, default=20, help='HTTP timeout in seconds')
     misc.add_argument('--insecure', action='store_true', help='do not verify TLS certificates')
     misc.add_argument('--no-meta', action='store_true', help='do not follow meta refresh')
@@ -85,6 +96,12 @@ def _options(args):
         clip=args.clip,
         resolve=args.resolve,
         search=args.search,
+        post=args.post,
+        order=args.order,
+        firstlink=args.firstlink,
+        nolink=args.nolink,
+        noref=args.noref,
+        silent=args.silent,
         xpath=args.xpath,
         items=args.items,
         item_link=args.item_link,
@@ -133,6 +150,8 @@ def main(argv=None):
         sys.stderr.write('error: %s\n' % exc)
         return 2
 
+    if args.silent:
+        return 0
     if args.output:
         with open(args.output, 'w', encoding='utf-8') as handle:
             handle.write(payload)

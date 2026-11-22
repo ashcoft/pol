@@ -182,7 +182,10 @@ class Fetcher:
         }
         request_headers.update(headers or {})
 
-        cached = self.cache.get(url) if self.cache else None
+        # The cache is keyed by URL, so a POST body or another method must not
+        # read or replace a cached GET response.
+        is_get = method.upper() == 'GET' and data is None
+        cached = self.cache.get(url) if (self.cache and is_get) else None
         if self.cache_only:
             if not cached:
                 raise FetchError('URL is not in the cache', url=url)
@@ -218,7 +221,7 @@ class Fetcher:
                             headers=response_headers, body=body)
 
         # Store the source response as well, so meta-refresh pages work offline.
-        if self.cache and status == 200:
+        if self.cache and is_get and status == 200:
             self.cache.store(url, status, response_headers, body, final_url=final_url)
 
         followed = self._follow_meta(response, headers, force, allow_meta, _depth)

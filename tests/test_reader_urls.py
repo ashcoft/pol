@@ -3,6 +3,7 @@ import pytest
 from pol.reader.errors import InvalidURLError
 from pol.reader.urls import (
     clean_url,
+    decode_feedsportal,
     defrag,
     is_http_url,
     looks_like_feed_url,
@@ -74,3 +75,36 @@ def test_looks_like_feed_url():
     assert looks_like_feed_url('https://example.com/rss.xml')
     assert looks_like_feed_url('https://example.com/blog/atom.xml?x=1')
     assert not looks_like_feed_url('https://example.com/about')
+
+
+def test_unwrap_google_news_pocket_and_translate():
+    assert unwrap_redirector(
+        'https://translate.google.de/translate?sl=auto&tl=en&u=https%3A%2F%2Fexample.com%2Fa'
+    ) == 'https://example.com/a'
+    assert unwrap_redirector(
+        'https://news.google.com/news/url?sa=t&url=https%3A%2F%2Fexample.com%2Fb'
+    ) == 'https://example.com/b'
+    assert unwrap_redirector(
+        'https://getpocket.com/redirect?url=https%3A%2F%2Fexample.com%2Fc'
+    ) == 'https://example.com/c'
+    assert unwrap_redirector(
+        'https://www.google.co.uk/url?q=https://example.com/d'
+    ) == 'https://example.com/d'
+
+
+def test_unwrap_does_not_touch_unrelated_google_paths():
+    url = 'https://translate.google.com/about?u=x'
+    assert unwrap_redirector(url) == url
+
+
+def test_decode_feedsportal():
+    # Segments are separated by '0'; the first is dropped and each following
+    # segment starts with a code letter (M = https://, B = ., C = /).
+    token = 'A0M0example0B0com0C0x'
+    assert decode_feedsportal(
+        'https://feedsportal.com/%s/story01.htm' % token) == 'https://example.com/x'
+
+
+def test_decode_feedsportal_leaves_plain_urls_alone():
+    url = 'https://example.com/story01.htm'
+    assert decode_feedsportal(url) == url
