@@ -275,7 +275,13 @@ def test_usable_url_rejects_control_characters_in_scheme():
     assert not _usable_url('java\tscript:alert(1)')
     assert not _usable_url('java\nscript:alert(1)')
     assert not _usable_url('java\rscript:alert(1)')
+    assert not _usable_url('java\x00script:alert(1)')
     assert not _usable_url(' javascript:alert(1)')
+
+
+def test_usable_url_preserves_spaces_in_relative_paths():
+    assert _usable_url('Chapter 1: Introduction.html')
+    assert _usable_url('my file.png')
 
 
 def test_sanitize_urls_escapes_leading_text():

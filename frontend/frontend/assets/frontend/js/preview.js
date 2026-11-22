@@ -59,38 +59,86 @@
             ' ');
     }
 
-    function addBlockSeparators(value) {
-        return String(value || '')
-            .replace(/<br\b[^>]*>/gi, ' ')
-            .replace(/<\/?(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre|section|article|header|footer|ul|ol|table|figure|figcaption)\b[^>]*>/gi,
-                ' ');
+    var SKIP_TAGS = /^(?:script|style|noscript|template|iframe|object|embed)$/;
+    var BLOCK_TAGS = /^(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre|section|article|header|footer|ul|ol|table|figure|figcaption)$/;
+
+    function collectText(node) {
+        var text = '';
+        for (var child = node.firstChild; child; child = child.nextSibling) {
+            if (child.nodeType === 3) {
+                text += child.nodeValue;
+            } else if (child.nodeType === 1) {
+                var tag = child.nodeName.toLowerCase();
+                if (SKIP_TAGS.test(tag)) {
+                    continue;
+                }
+                if (tag === 'br') {
+                    text += ' ';
+                    continue;
+                }
+                var block = BLOCK_TAGS.test(tag);
+                if (block) {
+                    text += ' ';
+                }
+                text += collectText(child);
+                if (block) {
+                    text += ' ';
+                }
+            }
+        }
+        return text;
+    }
+
+    function stripTags(value) {
+        var text = '';
+        var inTag = false;
+        var quote = '';
+        var tagStart = 0;
+        for (var index = 0; index < value.length; index++) {
+            var char = value.charAt(index);
+            if (inTag) {
+                if (quote) {
+                    if (char === quote) {
+                        quote = '';
+                    }
+                } else if (char === '"' || char === "'") {
+                    quote = char;
+                } else if (char === '>') {
+                    inTag = false;
+                    text += ' ';
+                }
+            } else if (char === '<') {
+                inTag = true;
+                tagStart = index;
+            } else {
+                text += char;
+            }
+        }
+        if (inTag) {
+            text += value.slice(tagStart);
+        }
+        return text;
     }
 
     function htmlToText(value) {
         if (!value) {
             return '';
         }
-        var source = addBlockSeparators(stripDangerousBlocks(value));
         if (typeof DOMParser !== 'undefined') {
             try {
                 // DOMParser creates an inert document, so parsing does not
                 // fetch <img>/<iframe> resources before safeUrl runs.
-                var documentRef = new DOMParser().parseFromString(source, 'text/html');
+                var documentRef = new DOMParser().parseFromString(String(value), 'text/html');
                 if (!documentRef.body) {
                     return '';
                 }
-                var junk = documentRef.body.querySelectorAll('script,style,noscript,template');
-                for (var index = 0; index < junk.length; index++) {
-                    if (junk[index].parentNode) {
-                        junk[index].parentNode.removeChild(junk[index]);
-                    }
-                }
-                return String(documentRef.body.textContent || '').replace(/\s+/g, ' ').trim();
+                return String(collectText(documentRef.body))
+                    .replace(/\s+/g, ' ').trim();
             } catch (ignore) {
                 // Fall back to the tag-stripping path below.
             }
         }
-        return decodeEntities(source.replace(/<[^>]*>/g, ' '))
+        return decodeEntities(stripTags(stripDangerousBlocks(value)))
             .replace(/\s+/g, ' ').trim();
     }
 

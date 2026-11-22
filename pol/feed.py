@@ -43,9 +43,11 @@ def _as_text(value):
 # parser accepts, so drop them before serialising the feed.
 _XML_INVALID_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
 _URL_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):', re.IGNORECASE)
-# Browsers ignore ASCII whitespace and C0 controls inside a URL scheme, so
-# `java&#9;script:` must be detected as JavaScript, not as a relative URL.
-_URL_CONTROL_RE = re.compile(r'[\x00-\x20\x7f]')
+# Browsers strip leading/trailing C0 controls and spaces and remove tabs,
+# newlines and carriage returns throughout a URL. Interior spaces are kept,
+# so a relative path like `Chapter 1: Introduction.html` must stay relative.
+_URL_EDGE_CONTROL_RE = re.compile(r'^[\x00-\x20\x7f]+|[\x00-\x20\x7f]+$')
+_URL_INTERNAL_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f]')
 _URL_ATTRS = frozenset({
     'href', 'src', 'poster', 'action', 'background',
     'data-src', 'data-original', 'data-lazy-src',
@@ -59,7 +61,8 @@ def _xml_text(value):
 
 
 def _url_scheme(value):
-    cleaned = _URL_CONTROL_RE.sub('', _as_text(value or ''))
+    cleaned = _URL_EDGE_CONTROL_RE.sub('', _as_text(value or ''))
+    cleaned = _URL_INTERNAL_CONTROL_RE.sub('', cleaned)
     match = _URL_SCHEME_RE.match(cleaned)
     return match.group(1).lower() if match else ''
 

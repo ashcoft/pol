@@ -49,6 +49,10 @@ test('htmlToText keeps a space between blocks and line breaks', () => {
     assert.equal(htmlToText('one<br>two'), 'one two');
 });
 
+test('htmlToText ignores a quoted > inside a tag', () => {
+    assert.equal(htmlToText('<p title="Score > 10">Final score</p>'), 'Final score');
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +
