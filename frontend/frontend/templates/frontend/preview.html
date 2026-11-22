@@ -27,19 +27,8 @@
   <div id="preview" class="well" style="margin-bottom: 60px">
     {% trans 'subscribe.loading' %}
   </div>
+  <script src="{% static 'frontend/js/preview.js' %}"></script>
   <script type="text/javascript">
-      function safeUrl(value) {
-          if (!value) {
-              return '';
-          }
-          try {
-              var url = new URL(value, window.location.origin);
-              return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
-          } catch (ignore) {
-              return '';
-          }
-      }
-
       function tryGetFeed() {
           $.getFeed({
               url: '{{ feed_url }}?sanitize=Y',
@@ -47,23 +36,7 @@
                   if ('items' in feed) {
                       $('#preview').empty()
                               .append($('<h3 style="margin-top: 0;"></h3>').append("{% trans 'subscribe.preview' %}: "));
-
-                      for (var i = 0; i < feed.items.length; i++) {
-
-                          var item = feed.items[i];
-                          var link = safeUrl(item.link);
-                          var title = item.title ? item.title : item.link;
-                          var $heading = $('<h4></h4>');
-
-                          if (link) {
-                              $heading.append($('<a></a>').attr('href', link).text(title));
-                          } else {
-                              $heading.text(title);
-                          }
-
-                          $('#preview').append($heading);
-                          $('#preview').append($('<div></div>').html(item.description || ''));
-                      }
+                      PolPreview.renderItems(document.getElementById('preview'), feed, document);
                   }
                   else {
                       $('#preview').text('No items.');

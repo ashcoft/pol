@@ -98,4 +98,5 @@ def test_preview_page_only_links_http_urls():
     response = Client().get('/en/preview/2')
     html = response.content.decode('utf-8')
     assert response.status_code == 200
-    assert 'safeUrl(item.link)' in html
+    assert 'frontend/js/preview.js' in html
+    assert 'PolPreview.renderItems' in html
