@@ -184,3 +184,23 @@ def test_offline_read_rejects_a_private_cached_url(tmp_path):
 
     with pytest.raises(InvalidURLError):
         fetcher.fetch('http://127.0.0.1/feed.xml')
+
+
+def test_post_is_not_cached_as_a_get(http_server):
+    calls = []
+
+    def route(method, handler):
+        calls.append(method)
+        body = RSS_FEED if method == 'GET' else RSS_FEED.replace('Example feed', 'Posted feed')
+        return 200, {'Content-Type': 'application/rss+xml'}, body
+
+    http_server.routes['/api'] = route
+    cache = HttpCache(MemoryCache(), ttl=60)
+    fetcher = Fetcher(timeout=5, cache=cache, allow_private=True)
+    url = http_server.base_url + '/api'
+
+    posted = fetcher.fetch(url, data=b'q=pol', method='POST')
+    assert b'Posted feed' in posted.body
+    fetched = fetcher.fetch(url)
+    assert b'Example feed' in fetched.body
+    assert calls == ['POST', 'GET']

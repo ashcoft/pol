@@ -10,6 +10,7 @@ from pol.reader.parse import (
     page_image,
     parse_feed,
     sanitize_html,
+    strip_links,
 )
 
 RSS = """<?xml version="1.0" encoding="utf-8"?>
@@ -415,3 +416,25 @@ def test_page_image_ignores_data_and_svg():
     html = ('<html><body><img src="data:image/png;base64,x">'
             '<img src="/icon.svg"></body></html>')
     assert page_image(html, 'https://example.com/article') == ''
+
+
+def test_rss_prefers_feedburner_orig_link():
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:feedburner="http://rssnamespace.org/feedburner/ext/1.0">
+  <channel>
+    <title>Burner</title>
+    <item>
+      <title>Post</title>
+      <link>https://feedproxy.example/~r/site/~3/abc</link>
+      <feedburner:origLink>https://example.com/real-post</feedburner:origLink>
+    </item>
+  </channel>
+</rss>"""
+    feed = parse_feed(xml, 'https://feedproxy.example/site')
+    assert feed.items[0].link == 'https://example.com/real-post'
+
+
+def test_strip_links_keeps_the_text():
+    result = strip_links('<p>see <a href="/x">this</a> and <a href="/y">that</a></p>')
+    assert '<a' not in result
+    assert 'see this and that' in result

@@ -222,6 +222,20 @@ def sanitize_html(fragment):
     return _inner_html(root)
 
 
+def strip_links(fragment):
+    """Drop ``<a>`` tags but keep their text, for morss's ``--nolink``."""
+    if not fragment or '<' not in fragment:
+        return fragment
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError, TypeError):
+        return fragment
+    for anchor in list(root.iter('a')):
+        if isinstance(anchor.tag, str):
+            anchor.drop_tag()
+    return _inner_html(root)
+
+
 def drop_element(element):
     """Remove an element but keep the text that follows it."""
     parent = element.getparent()
@@ -367,6 +381,8 @@ def _images(item, description, content):
 
 def _item_from_rss(element):
     link = _text(element, 'link')
+    # feedburner:origLink carries the publisher's URL behind a feedburner wrapper.
+    link = _text(element, 'origlink') or link
     guid_element = _first(element, 'guid')
     guid = _value(guid_element)
     permalink = (_attr(guid_element, 'isPermaLink')
