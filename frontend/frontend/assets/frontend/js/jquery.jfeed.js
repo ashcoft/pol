@@ -37,8 +37,33 @@ jQuery.getFeed = function(options) {
             url: options.url,
             data: options.data,
             cache: options.cache,
-            dataType: (jQuery.browser.msie) ? "text" : "xml",
-            success: function(xml) {
+            // Fetch as text and parse explicitly: jQuery's XML converter logs a
+            // console "XML Parsing Error" for every non-feed response, which is
+            // exactly what an upstream error page or a malformed feed produces.
+            dataType: "text",
+            success: function(response) {
+                var xml = response;
+                if (typeof response === 'string') {
+                    if (window.DOMParser) {
+                        try {
+                            xml = new DOMParser().parseFromString(response, 'application/xml');
+                            var parseError = xml.getElementsByTagName('parsererror')[0];
+                        } catch (parseException) {
+                            parseError = parseException;
+                        }
+                        if (parseError) {
+                            if (jQuery.isFunction(options.error)) {
+                                options.error(null, 'parsererror', parseError);
+                            }
+                            return;
+                        }
+                    } else if (window.ActiveXObject) {
+                        var xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
+                        xmlDoc.async = false;
+                        xmlDoc.loadXML(response);
+                        xml = xmlDoc;
+                    }
+                }
                 var feed = new JFeed(xml);
                 if (jQuery.isFunction(options.success)) options.success(feed);
             },
@@ -61,12 +86,6 @@ JFeed.prototype = {
     link: '',
     description: '',
     parse: function(xml) {
-
-        if (jQuery.browser.msie) {
-            var xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
-            xmlDoc.loadXML(xml);
-            xml = xmlDoc;
-        }
 
         if (jQuery('channel', xml).length == 1) {
 
@@ -162,6 +181,12 @@ JRss.prototype  = {
             item.description = jQuery(this).find('description').eq(0).text();
             item.updated = jQuery(this).find('pubDate').eq(0).text();
             item.id = jQuery(this).find('guid').eq(0).text();
+
+            var enclosure = jQuery(this).find('enclosure').eq(0);
+            var enclosureType = (enclosure.attr('type') || '').toLowerCase();
+            if (enclosure.attr('url') && enclosureType.indexOf('image/') === 0) {
+                item.image = enclosure.attr('url');
+            }
             
             feed.items.push(item);
         });

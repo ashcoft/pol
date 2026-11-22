@@ -4,6 +4,7 @@ import datetime
 import os
 
 import django
+from lxml import etree
 from lxml import html as lxml_html
 from scrapy.selector import Selector
 
@@ -22,6 +23,9 @@ from pol.feed import (  # noqa: E402
     _image_mime,
     _normalize_images,
     _parse_date,
+    _sanitize_urls,
+    _usable_url,
+    _xml_text,
 )
 
 
@@ -169,3 +173,94 @@ def test_usable_image_rejects_non_http_schemes():
     assert not Feed._usable_image('file:///etc/passwd')
     assert not Feed._usable_image('data:image/png;base64,AAA')
     assert not Feed._usable_image('http://[::1')
+
+
+def test_xml_text_drops_characters_xml_cannot_represent():
+    assert _xml_text('a\x00b\x0bc\ud800d') == 'abcd'
+    assert _xml_text(None) == ''
+
+
+def test_usable_url_keeps_web_and_relative_urls_only():
+    assert _usable_url('https://example.com/a.png')
+    assert _usable_url('/img/a.png')
+    assert _usable_url('//cdn.example.com/a.png')
+    assert _usable_url('pic.png')
+    assert not _usable_url('file:///etc/passwd')
+    assert not _usable_url('javascript:alert(1)')
+    assert not _usable_url('data:image/png;base64,AAA')
+    assert not _usable_url('vbscript:msgbox(1)')
+
+
+def test_sanitize_urls_drops_local_and_script_urls():
+    cleaned = _sanitize_urls(
+        '<a href="javascript:alert(1)">x</a>'
+        '<img src="file:///etc/passwd">'
+        '<img src="https://example.com/ok.png">'
+        '<img srcset="file:///a.png 1x, https://example.com/b.png 2x">'
+        '<div onclick="alert(1)">y</div>'
+    )
+    assert 'javascript:' not in cleaned
+    assert 'file:///' not in cleaned
+    assert 'https://example.com/ok.png' in cleaned
+    assert 'https://example.com/b.png 2x' in cleaned
+    assert 'onclick' not in cleaned
+
+
+def _build_feed(monkeypatch, page, required_link=True):
+    feed = Feed({})
+    monkeypatch.setattr(feed, 'fill_time', lambda feed_id, items: 0)
+    config = {
+        'id': 1,
+        'uri': 'https://example.com/blog/',
+        'xpath': '//article',
+        'fields': {
+            'title': 'h2/a/text()',
+            'description': 'div[@class="desc"]',
+            'link': 'h2/a/@href',
+            'image': 'img[1]/@src',
+        },
+        'required': {'title': True, 'description': True,
+                     'link': required_link, 'image': False},
+    }
+    return feed.buildFeed(Selector(text=page), page, config)
+
+
+def test_build_feed_drops_invalid_xml_characters(monkeypatch):
+    page = (
+        '<html><head><title>AT&amp;T</title></head><body><article>'
+        '<h2><a href="/post">Tom &amp; Jerry</a></h2>'
+        '<div class="desc">bad\x0btext</div>'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page)
+    assert count == 1
+    root = etree.fromstring(xml.encode('utf-8'))
+    description = root.find('.//item/description').text
+    assert 'badtext' in description
+
+
+def test_build_feed_drops_unsafe_image_urls(monkeypatch):
+    page = (
+        '<html><head><title>Feed</title></head><body><article>'
+        '<h2><a href="/post">Post</a></h2>'
+        '<div class="desc">Body <a href="javascript:alert(1)">x</a></div>'
+        '<img src="file:///etc/passwd">'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page)
+    assert count == 1
+    assert 'file:///' not in xml
+    assert 'javascript:' not in xml
+    assert '<enclosure' not in xml
+
+
+def test_build_feed_survives_a_malformed_link(monkeypatch):
+    page = (
+        '<html><head><title>Feed</title></head><body><article>'
+        '<h2><a href="http://[bad">Post</a></h2>'
+        '<div class="desc">Body</div>'
+        '</article></body></html>'
+    )
+    xml, count, _new = _build_feed(monkeypatch, page, required_link=False)
+    assert count == 1
+    etree.fromstring(xml.encode('utf-8'))
