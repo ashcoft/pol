@@ -3,7 +3,7 @@
 services:
   politepol:
     image: ghcr.io/ashcoft/pol:${POL_VERSION:-latest}
-    pull_policy: always
+    pull_policy: ${POL_PULL_POLICY:-always}
     environment:
       DB_NAME: '${DB_NAME:-pol}'
       DB_USER: '${DB_USER:-pol}'
