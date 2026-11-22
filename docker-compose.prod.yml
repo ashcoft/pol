@@ -2,7 +2,7 @@
 # `docker compose -f docker-compose.prod.yml up -d` can never build locally.
 services:
   politepol:
-    image: ghcr.io/ashcoft/pol:${POL_VERSION:-latest}
+    image: ghcr.io/ashcoft/pol-feed:${POL_VERSION:-latest}
     pull_policy: ${POL_PULL_POLICY:-always}
     environment:
       DB_NAME: '${DB_NAME:-pol}'
