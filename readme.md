@@ -27,8 +27,8 @@ existing feeds:
 
 * Read RSS 0.9x/2.0, Atom 0.3/1.0, RDF (RSS 1.0) and JSON Feed 1.0/1.1.
 * Discover feeds on a page, ported from [ashcoft/rss-finder](https://github.com/ashcoft/rss-finder):
-  `<link rel="alternate">`, feed-looking anchors, well-known paths, then every
-  candidate is verified by parsing it.
+  `<link rel="alternate">`, feed-looking anchors, well-known paths under the
+  page and then under the site root, and every candidate is verified by parsing it.
 * Fetch the full article text for feed items (readability-style extraction,
   or a manual XPath).
 * Build feeds from JSON, HTML or XML documents with hand-written rules.
@@ -36,7 +36,9 @@ existing feeds:
 * HTTP caching with memory, redis or diskcache backends and
   `ETag`/`Last-Modified` revalidation.
 * Replace tracking links with direct links, including known redirect wrappers
-  (`l.facebook.com`, `google.com/url`, `out.reddit.com`, ...).
+  (`l.facebook.com`, `google.com/url`, `news.google.com`, `translate.google.*`,
+  `getpocket.com/redirect`, `out.reddit.com`, ...), feedsportal links and
+  feedburner `origLink` values.
 * Recover broken encodings (BOM, header, XML declaration, meta charset, legacy
   Chinese/Japanese/Korean/Cyrillic code pages).
 * Follow HTTP redirects and `<meta http-equiv="refresh">` redirects.
@@ -63,11 +65,11 @@ The downloader server exposes these endpoints (nginx proxies them, see
 | `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
-`resolve`, `search`, `xpath`, `indent`, `max_items`, `offline`, `force`,
-`no_meta`, plus the custom-feed rules `mode`, `items`, `item_title`,
-`item_link`, `item_content`, `item_desc`, `item_time`, `item_author`,
-`item_image`. Full-text fetching is off by default on HTTP and can be enabled
-with `fulltext=1`.
+`resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
+`max_items`, `offline`, `force`, `no_meta`, plus the custom-feed rules `mode`,
+`items`, `item_title`, `item_link`, `item_content`, `item_desc`, `item_time`,
+`item_author`, `item_image`. Full-text fetching is off by default on HTTP and
+can be enabled with `fulltext=1`.
 
 Examples:
 
@@ -91,6 +93,13 @@ python -m pol.reader https://example.com/api \
 
 Installing the project (`pip install .`) also provides the `morss` and
 `pol-feed` console scripts.
+
+The morss options are accepted too: `--post STRING` sends the body to the feed
+URL, `--order first|last|newest|oldest` chooses which items are enriched when
+`--max-items` is reached (the output order is unchanged), `--firstlink` takes
+the item link from the first `<a>` in the description, `--nolink` drops anchors
+from item content while keeping their text, `--noref` drops item links, and
+`--silent` suppresses the output.
 
 ## Cache backends
 
