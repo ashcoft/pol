@@ -204,6 +204,37 @@ def _normalize_images(fragment, base_url):
         etree.tostring(child, encoding='unicode', method='html') for child in root)
 
 
+def _legacy_normalize_images(fragment, base_url):
+    """Pre-sanitizer image normalization, kept only for stable fallback GUIDs.
+
+    Do not add URL filtering or text escaping here: existing link-less posts
+    were identified by this exact output, so changing it republishes them.
+    """
+    if '<img' not in fragment:
+        return fragment
+    try:
+        root = lxml_html.fragment_fromstring(fragment, create_parent='div')
+    except (etree.ParserError, ValueError):
+        return fragment
+    changed = False
+    for img in root.iter('img'):
+        src = img.get('src') or ''
+        lazy_src = img.get('data-src') or img.get('data-original') or img.get('data-lazy-src')
+        if lazy_src and (not src or src.startswith('data:')):
+            src = lazy_src
+            img.set('src', src)
+            changed = True
+        if src and base_url and not re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', src, re.I):
+            img.set('src', six.moves.urllib.parse.urljoin(base_url, src))
+            changed = True
+        if 'loading' in img.attrib:
+            del img.attrib['loading']
+    if not changed:
+        return fragment
+    return (root.text or '') + ''.join(
+        etree.tostring(child, encoding='unicode', method='html') for child in root)
+
+
 def _parse_date(value):
     """Parse a human-readable date from a page into an aware datetime."""
     if not value:
@@ -406,7 +437,10 @@ class Feed(object):
             # Keep the fallback GUID on the legacy description pipeline. Only
             # the published description is sanitized, so a sanitizer change
             # does not make readers treat an old post as new.
-            legacy_desc = _normalize_images(raw_desc, base_url)
+            try:
+                legacy_desc = _legacy_normalize_images(raw_desc, base_url)
+            except ValueError:
+                legacy_desc = raw_desc
             desc = _xml_text(_sanitize_urls(legacy_desc))
             image = item.get('image')
             if image:

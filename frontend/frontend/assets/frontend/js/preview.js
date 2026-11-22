@@ -73,6 +73,8 @@
         var source = addBlockSeparators(stripDangerousBlocks(value));
         if (typeof DOMParser !== 'undefined') {
             try {
+                // DOMParser creates an inert document, so parsing does not
+                // fetch <img>/<iframe> resources before safeUrl runs.
                 var documentRef = new DOMParser().parseFromString(source, 'text/html');
                 if (!documentRef.body) {
                     return '';
@@ -108,6 +110,7 @@
 
         if (typeof DOMParser !== 'undefined') {
             try {
+                // Inert document: no image or iframe request is made here.
                 var documentRef = new DOMParser().parseFromString(source, 'text/html');
                 var nodes = documentRef.body
                     ? documentRef.body.querySelectorAll('img[src]') : [];

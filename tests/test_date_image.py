@@ -21,6 +21,7 @@ from pol.feed import (  # noqa: E402
     Feed,
     _as_utc,
     _image_mime,
+    _legacy_normalize_images,
     _normalize_images,
     _parse_date,
     _sanitize_srcset,
@@ -293,6 +294,12 @@ def test_normalize_images_escapes_leading_text():
     )
     assert '<img src=x' not in out
     assert '&lt;img src=x' in out
+
+
+def test_legacy_image_normalization_is_kept_for_guids():
+    raw = '<img src="file:///etc/passwd" loading="lazy">'
+    assert 'loading' in _legacy_normalize_images(raw, 'https://example.com/')
+    assert 'loading' not in _normalize_images(raw, 'https://example.com/')
 
 
 def test_sanitize_srcset_keeps_commas_inside_urls():
