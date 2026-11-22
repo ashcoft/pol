@@ -412,6 +412,35 @@ CI runs `pytest -v tests/` on Python 3.15, plus linting, a Docker image build an
 an import check inside the image. The tests do not need a database; the Django
 tests load settings only.
 
+## End-to-end tests
+
+The Playwright suite runs against a live stack. Start the downloader with the
+private-host reader flag so the local fixture is reachable:
+
+```bash
+# terminal 1
+POL_READER_ALLOW_PRIVATE=1 python downloader.py 1234
+
+# terminal 2
+python -m gunicorn frontend.wsgi:application \
+  --pythonpath ./frontend --bind 127.0.0.1:8000
+
+# nginx: copy nginx/default.site-example to sites-available/default and start it
+```
+
+Then:
+
+```bash
+pip install -r requirements-e2e.txt
+python -m playwright install --with-deps chromium
+RUN_E2E=1 pytest tests/e2e -v
+```
+
+`tests/e2e` uses a local HTTP fixture, so it does not call external sites.
+`E2E_BASE_URL` selects the URL (default `http://127.0.0.1`). The `E2E` workflow
+starts the full stack and runs the same command; the normal CI run ignores
+`tests/e2e`.
+
 ## License
 
 MIT
