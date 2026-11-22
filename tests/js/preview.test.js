@@ -95,6 +95,13 @@ test('htmlToText skips style content containing comparison characters', () => {
     );
 });
 
+test('htmlToText handles Unicode before a raw-text block', () => {
+    assert.equal(
+        htmlToText('İ'.repeat(20) + '<style>x</style><p>Story</p>'),
+        'İ'.repeat(20) + ' Story'
+    );
+});
+
 test('imageUrls keeps http images and rejects local or inline images', () => {
     assert.deepEqual(
         imageUrls('<img src="https://example.com/a.jpg">' +

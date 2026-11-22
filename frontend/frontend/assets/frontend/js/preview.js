@@ -78,19 +78,39 @@
         return list.indexOf(value) !== -1;
     }
 
-    function findRawTextEnd(source, name, from) {
-        var lower = source.toLowerCase();
-        var needle = '</' + name;
-        var at = lower.indexOf(needle, from);
-        while (at !== -1) {
-            var after = lower.charAt(at + needle.length);
-            if (after === '' || after === '>' || /\s/.test(after)) {
-                var end = source.indexOf('>', at);
-                return end === -1 ? source.length : end + 1;
-            }
-            at = lower.indexOf(needle, at + needle.length);
+    function rawTextEndPattern(name) {
+        switch (name) {
+        case 'script':
+            return /<\/script(?=[\s>]|$)/gi;
+        case 'style':
+            return /<\/style(?=[\s>]|$)/gi;
+        case 'noscript':
+            return /<\/noscript(?=[\s>]|$)/gi;
+        case 'iframe':
+            return /<\/iframe(?=[\s>]|$)/gi;
+        case 'object':
+            return /<\/object(?=[\s>]|$)/gi;
+        case 'textarea':
+            return /<\/textarea(?=[\s>]|$)/gi;
+        case 'title':
+            return /<\/title(?=[\s>]|$)/gi;
+        default:
+            return null;
         }
-        return -1;
+    }
+
+    function findRawTextEnd(source, name, from) {
+        var pattern = rawTextEndPattern(name);
+        if (!pattern) {
+            return -1;
+        }
+        pattern.lastIndex = from;
+        var match = pattern.exec(source);
+        if (!match) {
+            return -1;
+        }
+        var end = source.indexOf('>', match.index);
+        return end === -1 ? source.length : end + 1;
     }
 
     function htmlToText(value) {
