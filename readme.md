@@ -279,12 +279,38 @@ If you never want the build fallback, use the pull-only production file:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-It has no `build:` section and uses `pull_policy: always`, so it always pulls
-the published image and fails explicitly if the registry is unavailable.
+It has no `build:` section and uses `POL_PULL_POLICY` (default `always`), so it
+pulls the published image and fails explicitly if the registry is unavailable.
+
+If you cannot use GHCR, build the image locally and reuse it with
+`POL_PULL_POLICY=never`. Both compose files use the same `POL_VERSION`, so the
+local build gets the tag production expects:
+
+```bash
+POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)
+docker compose up -d --build
+POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
+```
+
+Back up the exact production image so a removed container does not force a
+GHCR login:
+
+```bash
+POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)
+docker save "ghcr.io/ashcoft/pol:${POL_VERSION:-latest}" \
+  | gzip > /tmp/pol-image.tar.gz
+
+# restore later, then start without pulling
+gunzip -c /tmp/pol-image.tar.gz | docker load
+POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
+```
+
+Set `POL_PULL_POLICY=never` in `.env` if every production start should use the
+local image.
 
 The stack starts two services:
 
-* `politepol` - `ghcr.io/ashcoft/pol:latest` (or `POL_VERSION` in production);
+* `politepol` - `ghcr.io/ashcoft/pol:${POL_VERSION:-latest}`;
   Gunicorn and the downloader in one container, running as the unprivileged
   `appuser`; publishes `127.0.0.1:8000` and `127.0.0.1:1234` on the host
 * `dbpolitepol` - `postgres:19`, with its data in the `pol_pg` volume mounted
@@ -317,6 +343,7 @@ Compose reads `.env` for these values:
 | `DB_USER` | `pol` | database user |
 | `DB_PASSWORD` | `change-me` | database password |
 | `POL_VERSION` | `latest` | app image tag to pin in production |
+| `POL_PULL_POLICY` | unset | pull policy; production defaults to `always`, development to `missing` |
 | `TIME_ZONE` | `UTC` | Django timezone |
 | `DEBUG` | `False` | keep `False` in production |
 | `SECRET_KEY` | `change-me-in-production` | set a long random value |
@@ -374,6 +401,13 @@ docker compose -f docker-compose.prod.yml up -d
 
 # database backup
 docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
+
+# image backup (for hosts that cannot pull from GHCR)
+POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)
+docker save "ghcr.io/ashcoft/pol:${POL_VERSION:-latest}" \
+  | gzip > /tmp/pol-image.tar.gz
+gunzip -c /tmp/pol-image.tar.gz | docker load
+POL_PULL_POLICY=never docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### Publishing the image (maintainers)
