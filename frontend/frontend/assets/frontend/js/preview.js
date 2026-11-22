@@ -7,14 +7,24 @@
 }(typeof window !== 'undefined' ? window : this, function () {
     'use strict';
 
-    var ENTITIES = {
-        amp: '&',
-        lt: '<',
-        gt: '>',
-        quot: '"',
-        apos: "'",
-        nbsp: ' '
-    };
+    function decodeEntity(name) {
+        switch (name.toLowerCase()) {
+        case 'amp':
+            return '&';
+        case 'lt':
+            return '<';
+        case 'gt':
+            return '>';
+        case 'quot':
+            return '"';
+        case 'apos':
+            return "'";
+        case 'nbsp':
+            return ' ';
+        default:
+            return null;
+        }
+    }
 
     function safeUrl(value) {
         if (!value) {
@@ -47,9 +57,8 @@
                     }
                     return match;
                 }
-                var key = entity.toLowerCase();
-                return Object.prototype.hasOwnProperty.call(ENTITIES, key)
-                    ? ENTITIES[key] : match;
+                var decoded = decodeEntity(entity);
+                return decoded === null ? match : decoded;
             });
     }
 
@@ -149,13 +158,6 @@
         var source = String(value);
         var found = [];
 
-        function add(candidate) {
-            var url = safeUrl(candidate);
-            if (url && found.indexOf(url) === -1) {
-                found.push(url);
-            }
-        }
-
         if (typeof DOMParser !== 'undefined') {
             try {
                 // Inert document: no image or iframe request is made here.
@@ -163,7 +165,11 @@
                 var nodes = documentRef.body
                     ? documentRef.body.querySelectorAll('img[src]') : [];
                 for (var index = 0; index < nodes.length; index++) {
-                    add(nodes[index].getAttribute('src'));
+                    var src = nodes[index].getAttribute('src');
+                    var image = safeUrl(src);
+                    if (image && found.indexOf(image) === -1) {
+                        found.push(image);
+                    }
                 }
                 return found;
             } catch (ignore) {
@@ -174,7 +180,10 @@
         var pattern = /<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
         var match;
         while ((match = pattern.exec(source)) !== null) {
-            add(match[1] || match[2] || match[3] || '');
+            var candidate = safeUrl(match[1] || match[2] || match[3] || '');
+            if (candidate && found.indexOf(candidate) === -1) {
+                found.push(candidate);
+            }
         }
         return found;
     }
