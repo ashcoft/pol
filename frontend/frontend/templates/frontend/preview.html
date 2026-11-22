@@ -22,6 +22,10 @@
         document.write(location.protocol + '//' + location.hostname);
       </script>{{ feed_url }}</a>
     </h3>
+    <p>
+      <a class="btn btn-primary" href="{% url 'edit_feed' feed_id %}">{% trans "Edit feed" %}</a>
+      <a class="btn" href="{% url 'myfeeds' %}">{% trans "My feeds" %}</a>
+    </p>
   </div>
 
   <div id="preview" class="well" style="margin-bottom: 60px">

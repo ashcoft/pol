@@ -22,7 +22,13 @@ from . import views
 urlpatterns = i18n_patterns(
     url(r'^$', views.index, name='index'),
     url(r'^setup$', views.setup, name='setup'),
+    url(r'^setup/([0-9]+)$', views.edit_feed, name='edit_feed'),
     url(r'^preview/([0-9]+)$', views.preview, name='preview'),
+    url(r'^myfeeds$', views.myfeeds, name='myfeeds'),
+    url(r'^myfeeds/delete/([0-9]+)$', views.delete_feed, name='delete_feed'),
+    url(r'^accounts/signup/?$', views.signup, name='signup'),
+    url(r'^accounts/login/?$', views.login_view, name='login'),
+    url(r'^accounts/logout/?$', views.logout_view, name='logout'),
     url(r'^contact$', views.contact, name='contact'),
     url(r'^admin/', admin.site.urls),
 )

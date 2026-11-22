@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 class Feed(models.Model):
@@ -5,6 +6,12 @@ class Feed(models.Model):
     xpath = models.CharField(max_length=2000)
     edited = models.BooleanField(default=False)
     created = models.DateTimeField(auto_now_add=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.CASCADE, related_name='feeds')
+    # Anonymous feeds belong to the browser session that created them. The key
+    # is cleared when the feed is claimed by a signed-in user.
+    session_key = models.CharField(max_length=40, blank=True, default='', db_index=True)
 
 class Field(models.Model):
     name = models.CharField(max_length=200)

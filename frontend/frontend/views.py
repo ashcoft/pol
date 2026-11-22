@@ -4,20 +4,25 @@ import urllib.request
 import json
 import re
 
+from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.db.models import Count
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.http import HttpResponseRedirect, HttpResponse, HttpResponseBadRequest
-from django.shortcuts import render
+from django.http import (
+    HttpResponseRedirect, HttpResponse, HttpResponseBadRequest,
+    HttpResponseNotAllowed)
+from django.shortcuts import get_object_or_404, redirect, render
 from django.core.validators import URLValidator
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import gettext as _
 
 from . import settings as frontend_settings
-from .forms import IndexForm
+from .forms import FeedEditForm, IndexForm, LoginForm, SignUpForm
 from .models import Feed, Field, FeedField
 from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
 from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
-from .setup_tool_ext import build_xpath_results
 
 DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
 
@@ -38,6 +43,46 @@ def _normalize_discovery_url(url):
     except ValidationError as exc:
         raise ValueError('Invalid URL format') from exc
     return candidate
+
+
+def _session_key(request):
+    if not request.session.session_key:
+        request.session.create()
+    return request.session.session_key
+
+
+def _feed_owner_kwargs(request):
+    if request.user.is_authenticated:
+        return {'owner': request.user, 'session_key': ''}
+    return {'owner': None, 'session_key': _session_key(request)}
+
+
+def _can_manage(request, feed, allow_legacy_claim=False):
+    if feed.owner_id is not None:
+        return request.user.is_authenticated and feed.owner_id == request.user.id
+    if feed.session_key:
+        return feed.session_key == request.session.session_key
+    # Feeds created before accounts existed have neither an owner nor a session.
+    # They may be claimed by a signed-in user through the edit page, but never
+    # deleted directly.
+    return allow_legacy_claim and request.user.is_authenticated
+
+
+def _deny_feed_access(request):
+    if not request.user.is_authenticated:
+        login_url = reverse('login') + '?' + urllib.parse.urlencode(
+            {'next': request.path})
+        return HttpResponseRedirect(login_url)
+    raise PermissionDenied(_('You cannot manage this feed.'))
+
+
+def _claim_session_feeds(request, user):
+    session_key = request.session.session_key
+    if not session_key:
+        return
+    Feed.objects.filter(owner__isnull=True, session_key=session_key).update(
+        owner=user, session_key='')
+
 
 def index(request):
     if request.method == 'GET' and 'url' in request.GET:
@@ -153,7 +198,7 @@ def _get_date_xpath(date_xpath):
             ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
-def _create_feed(url, xpathes, edited=False):
+def _create_feed(request, url, xpathes, edited=False):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
 
@@ -163,7 +208,8 @@ def _create_feed(url, xpathes, edited=False):
                for field_id, value in item_xpathes.items() if field_id in by_id}
 
     with transaction.atomic():
-        feed = Feed(uri=url, xpath=feed_xpath, edited=edited)
+        feed = Feed(uri=url, xpath=feed_xpath, edited=edited,
+                    **_feed_owner_kwargs(request))
         feed.save()
 
         for field in fields:
@@ -203,7 +249,7 @@ def setup_create_feed(request):
             field_xpathes[field.id] = [xpathes[1][field.name], required]
         xpathes[1] = field_xpathes
 
-        feed_id = _create_feed(url, xpathes)
+        feed_id = _create_feed(request, url, xpathes)
 
         return HttpResponse(reverse('preview', args=(feed_id,)))
 
@@ -250,6 +296,8 @@ def _name_field_results(messages, posts):
 
 
 def setup_validate_selectors(request):
+    from .setup_tool_ext import build_xpath_results
+
     if request.method == 'POST':
         obj = json.loads(request.body)
         if 'selectors' not in obj or 'snapshot_time' not in obj:
@@ -272,6 +320,8 @@ def setup_validate_selectors(request):
         return HttpResponse(json.dumps({'success': success, 'messages': messages, 'posts': posts}))
 
 def setup_create_feed_ext(request):
+    from .setup_tool_ext import build_xpath_results
+
     if request.method == 'POST':
         obj = json.loads(request.body)
         if 'selectors' not in obj or 'snapshot_time' not in obj or 'url' not in obj:
@@ -293,19 +343,142 @@ def setup_create_feed_ext(request):
 
         if success:
             url = obj['url']
-            feed_id = _create_feed(url, validated_selectors, True)
+            feed_id = _create_feed(request, url, validated_selectors, True)
             return HttpResponse(json.dumps({'success': True, 'url': reverse('preview', args=(feed_id,))}))
         else:
             return HttpResponse(json.dumps({'success': False, 'messages': messages}))
 
 def preview(request, feed_id):
-    if request.method == 'GET': 
-        return render(request, 'frontend/preview.html',
-                        {
-                            'feed_url': FEED_PAGE_URL + feed_id
-                        })
+    if request.method != 'GET':
+        return HttpResponseBadRequest('Only GET method supported')
 
-    return HttpResponseBadRequest('Only GET method supported')
+    # The preview page itself does not need the database. The edit route
+    # enforces ownership, so it is safe to show the link to everyone.
+    return render(request, 'frontend/preview.html',
+                  {
+                      'feed_url': FEED_PAGE_URL + feed_id,
+                      'feed_id': feed_id,
+                  })
+
+
+def myfeeds(request):
+    if request.user.is_authenticated:
+        feeds = Feed.objects.filter(owner=request.user)
+    elif request.session.session_key:
+        feeds = Feed.objects.filter(
+            owner__isnull=True, session_key=request.session.session_key)
+    else:
+        feeds = Feed.objects.none()
+
+    feeds = feeds.annotate(field_count=Count('feedfield')).order_by('-created')
+    return render(request, 'frontend/myfeeds.html', {'feeds': feeds})
+
+
+def edit_feed(request, feed_id):
+    feed = get_object_or_404(Feed, pk=feed_id)
+    fields = list(Field.objects.order_by('id'))
+
+    if request.method == 'POST':
+        form = FeedEditForm(request.POST, fields=fields)
+        if form.is_valid():
+            with transaction.atomic():
+                # Reload under a row lock so two concurrent claims cannot both
+                # pass the permission check and overwrite each other.
+                feed = get_object_or_404(
+                    Feed.objects.select_for_update(), pk=feed_id)
+                if not _can_manage(request, feed, allow_legacy_claim=True):
+                    return _deny_feed_access(request)
+
+                if request.user.is_authenticated and feed.owner_id is None:
+                    feed.owner = request.user
+                    feed.session_key = ''
+                feed.uri = form.cleaned_data['uri']
+                feed.xpath = form.cleaned_data['feed_xpath']
+                feed.edited = True
+                feed.save()
+
+                for field in fields:
+                    xpath = form.cleaned_data.get('xpath_%s' % field.name, '').strip()
+                    existing = FeedField.objects.filter(feed=feed, field=field).first()
+                    if xpath:
+                        if existing:
+                            existing.xpath = xpath
+                            existing.save(update_fields=['xpath'])
+                        else:
+                            FeedField.objects.create(feed=feed, field=field, xpath=xpath)
+                    elif existing:
+                        existing.delete()
+            return redirect('preview', feed.id)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return _deny_feed_access(request)
+    else:
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return _deny_feed_access(request)
+        initial = {'uri': feed.uri, 'feed_xpath': feed.xpath}
+        for feed_field in feed.feedfield_set.select_related('field'):
+            initial['xpath_%s' % feed_field.field.name] = feed_field.xpath
+        form = FeedEditForm(initial=initial, fields=fields)
+
+    return render(request, 'frontend/edit_feed.html',
+                  {'feed': feed, 'form': form, 'field_rows': form.field_rows()})
+
+
+def delete_feed(request, feed_id):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    feed = get_object_or_404(Feed, pk=feed_id)
+    # Deleting an unclaimed legacy feed is not allowed. A user must claim it
+    # through the edit page first.
+    if not _can_manage(request, feed):
+        raise PermissionDenied(_('You cannot delete this feed.'))
+    feed.delete()
+    return redirect('myfeeds')
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect('myfeeds')
+
+    if request.method == 'POST':
+        form = SignUpForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            _claim_session_feeds(request, user)
+            auth_login(request, user)
+            return redirect('myfeeds')
+    else:
+        form = SignUpForm()
+
+    return render(request, 'registration/signup.html', {'form': form})
+
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('myfeeds')
+
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    if request.method == 'POST':
+        form = LoginForm(request, data=request.POST)
+        if form.is_valid():
+            user = form.get_user()
+            _claim_session_feeds(request, user)
+            auth_login(request, user)
+            if next_url and url_has_allowed_host_and_scheme(
+                    next_url, {request.get_host()}, request.is_secure()):
+                return redirect(next_url)
+            return redirect('myfeeds')
+    else:
+        form = LoginForm(request)
+
+    return render(request, 'registration/login.html',
+                  {'form': form, 'next': next_url})
+
+
+def logout_view(request):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    auth_logout(request)
+    return redirect('index')
 
 
 def discover(request):

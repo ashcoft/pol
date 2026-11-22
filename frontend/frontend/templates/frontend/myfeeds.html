@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "My feeds" %} | Polite Pol{% endblock %}
+
+{% block content %}
+{% trans "Delete this feed?" as delete_confirm %}
+<div class="page-header">
+  <h1>{% trans "My feeds" %}</h1>
+</div>
+
+{% if not user.is_authenticated %}
+  <div class="alert alert-info">
+    {% trans "These feeds are stored in this browser session." %}
+    <a href="{% url 'signup' %}">{% trans "Create an account" %}</a>
+    {% trans "or" %}
+    <a href="{% url 'login' %}">{% trans "log in" %}</a>
+    {% trans "to keep them." %}
+  </div>
+{% endif %}
+
+{% if feeds %}
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>{% trans "ID" %}</th>
+      <th>{% trans "Page" %}</th>
+      <th>{% trans "Fields" %}</th>
+      <th>{% trans "Created" %}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for feed in feeds %}
+    <tr>
+      <td>{{ feed.id }}</td>
+      <td><a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a></td>
+      <td>{{ feed.field_count }}</td>
+      <td>{{ feed.created|date:"Y-m-d H:i" }}</td>
+      <td class="nowrap">
+        <a class="btn btn-mini" href="{% url 'preview' feed.id %}">{% trans "Preview" %}</a>
+        <a class="btn btn-mini" href="{% url 'edit_feed' feed.id %}">{% trans "Edit" %}</a>
+        <form method="post" action="{% url 'delete_feed' feed.id %}" style="display:inline"
+              onsubmit="return confirm('{{ delete_confirm|escapejs }}');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-mini btn-danger">{% trans "Delete" %}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>{% trans "You have no feeds yet." %} <a href="{% url 'index' %}">{% trans "Create your first feed" %}</a>.</p>
+{% endif %}
+{% endblock %}
