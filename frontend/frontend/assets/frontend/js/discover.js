@@ -229,14 +229,26 @@
             if (!url) {
                 return '';
             }
-            return /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : 'https://' + url;
+            if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+                url = 'https://' + url;
+            }
+            var match = url.match(/^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([\s\S]*)$/i);
+            if (!match) {
+                return url;
+            }
+            var authority = match[2];
+            var at = authority.lastIndexOf('@');
+            var userinfo = at >= 0 ? authority.slice(0, at + 1) : '';
+            var hostport = at >= 0 ? authority.slice(at + 1) : authority;
+            return match[1].toLowerCase() + '://' + userinfo +
+                hostport.toLowerCase() + match[3];
         }
 
         function openFeedBuilder(url) {
             var setupUrl = $form.data('setup-url') || '/setup';
             var target = normalizeUrl(url);
             if (!target) {
-                $status.text('Enter a page URL first.');
+                setStatus('Enter a page URL first.');
                 return;
             }
             window.location.assign(setupUrl + '?url=' + encodeURIComponent(target));
@@ -249,7 +261,7 @@
                 return;
             }
 
-            $status.text('Found ' + feeds.length + ' RSS feed' + (feeds.length === 1 ? '' : 's'));
+            setStatus('Found ' + feeds.length + ' RSS feed' + (feeds.length === 1 ? '' : 's'));
             var seen = {};
 
             $.each(feeds, function (_index, feed) {
@@ -325,10 +337,35 @@
             }
         }
 
+        function setStatus(message, loading) {
+            $status.toggleClass('is-loading', Boolean(loading));
+            if (loading) {
+                $status.empty().append(
+                    $('<span>', {'class': 'rss-spinner', 'aria-hidden': 'true'}),
+                    document.createTextNode(' ' + message)
+                );
+            } else {
+                setStatus(message);
+            }
+        }
+
+        function showSkeletons() {
+            $results.empty();
+            for (var i = 0; i < 3; i++) {
+                $results.append(
+                    '<li class="feed-result feed-result-skeleton" aria-hidden="true">' +
+                    '<span class="skeleton-favicon"></span>' +
+                    '<span class="skeleton-lines">' +
+                    '<span class="skeleton-line"></span>' +
+                    '<span class="skeleton-line short"></span>' +
+                    '</span></li>');
+            }
+        }
+
         function runDiscovery(url, scrollToResults) {
             url = normalizeUrl(url);
             if (!url) {
-                $status.text('Enter a page URL first.');
+                setStatus('Enter a page URL first.');
                 return;
             }
             if (running) {
@@ -336,14 +373,16 @@
             }
             var captcha = captchaValue();
             if (!captcha) {
-                $status.text('Complete the verification first.');
+                setStatus('Complete the verification first.');
                 focusCaptcha();
                 return;
             }
 
             running = true;
             $submit.prop('disabled', true);
-            $status.text('Looking for feeds…');
+            setStatus('Looking for feeds…', true);
+            showSkeletons();
+            $results.attr('aria-busy', 'true');
             $results.empty();
 
             $.ajax({
@@ -358,7 +397,7 @@
             }).done(function (data) {
                 var feeds = (data && data.feeds) || [];
                 if (!feeds.length) {
-                    $status.text('No RSS feed found — opening the feed builder…');
+                    setStatus('No RSS feed found — opening the feed builder…');
                     openFeedBuilder(url);
                     return;
                 }
@@ -381,17 +420,19 @@
                     // keep the generic message
                 }
                 if (xhr.status === 400) {
-                    $status.text(message);
+                    setStatus(message);
                     if (captchaFailed) {
                         focusCaptcha();
                     }
                     return;
                 }
-                $status.text(message + ' Opening the feed builder…');
+                setStatus(message + ' Opening the feed builder…');
                 openFeedBuilder(url);
             }).always(function () {
                 running = false;
                 $submit.prop('disabled', false);
+                $results.find('.feed-result-skeleton').remove();
+                $results.attr('aria-busy', 'false');
                 resetCaptcha();
             });
         }
@@ -447,7 +488,7 @@
         var query = params.get('q');
         if (query) {
             $input.val(query);
-            $status.text('Complete the verification, then press Find RSS.');
+            setStatus('Complete the verification, then press Find RSS.');
             focusCaptcha();
         }
     });

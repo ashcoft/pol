@@ -13,8 +13,7 @@ from django.http import (
     HttpResponseRedirect, HttpResponse, HttpResponseBadRequest,
     HttpResponseNotAllowed)
 from django.shortcuts import get_object_or_404, redirect, render
-from django.core.validators import URLValidator
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -25,26 +24,9 @@ from .forms import FeedEditForm, IndexForm, LoginForm, SignUpForm
 from .models import Feed, Field, FeedField
 from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
 from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
+from .urlutils import normalize_discovery_url as _normalize_discovery_url
 
 DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
-
-_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):(?!\d)', re.IGNORECASE)
-
-
-def _normalize_discovery_url(url):
-    """Mirror pol.reader.urls.normalize_url without importing the reader package."""
-    trimmed = (url or '').strip()
-    if not trimmed:
-        raise ValueError('URL is required')
-    scheme = _SCHEME_RE.match(trimmed)
-    # The user-controlled value is deliberately the URL host; URLValidator below
-    # rejects anything that is not a well-formed http(s) URL.
-    candidate = trimmed if scheme else 'https://' + trimmed  # nosemgrep
-    try:
-        URLValidator(schemes=['http', 'https'])(candidate)
-    except ValidationError as exc:
-        raise ValueError('Invalid URL format') from exc
-    return candidate
 
 
 def _session_key(request):
@@ -90,13 +72,9 @@ def index(request):
     if request.method == 'GET' and 'url' in request.GET:
         form = IndexForm(request.GET)
         if form.is_valid():
-            val = URLValidator()
             try:
-                url = request.GET['url']
-                if not url.startswith('http'):
-                    url = 'http://' + url
-                val(url)
-            except ValidationError:
+                url = _normalize_discovery_url(request.GET['url'])
+            except ValueError:
                 form.add_error('url', 'Invalid url')
             else:
                 # The redirect target is always this site's setup page; the

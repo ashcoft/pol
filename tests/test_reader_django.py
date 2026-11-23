@@ -82,6 +82,24 @@ def test_discover_reports_downloader_failure(http_server, monkeypatch):
 
 
 @override_settings(**TEST_SETTINGS)
+def test_discover_lowercases_scheme_and_host(http_server, monkeypatch):
+    seen = {}
+
+    def route(method, handler):
+        seen['path'] = handler.path
+        return 200, {'Content-Type': 'application/json'}, '{"feeds": []}'
+
+    http_server.routes['/discover'] = route
+    monkeypatch.setattr(views, 'DOWNLOADER_BASE_URL', http_server.base_url)
+
+    data = {'url': 'Swa.co.id/Path?Q=Value'}
+    data.update(captcha_data())
+    response = Client().get('/discover', data)
+    assert response.status_code == 200
+    assert 'url=https%3A%2F%2Fswa.co.id%2FPath%3FQ%3DValue' in seen['path']
+
+
+@override_settings(**TEST_SETTINGS)
 def test_discover_requires_captcha(http_server, monkeypatch):
     seen = []
     http_server.routes['/discover'] = lambda *args: seen.append(1) or (
@@ -202,6 +220,14 @@ def test_cap_siteverify_calls_server(http_server):
             CAP_TEST_MODE=False, CAP_API_URL=http_server.base_url,
             CAP_SITE_KEY='site', CAP_SECRET='secret'):
         assert cap.verify('token') is False
+
+
+@override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)
+def test_setup_lowercases_scheme_and_host():
+    response = Client().get('/en/setup', {'url': 'Swa.co.id/Path'})
+    assert response.status_code == 200
+    html = response.content.decode('utf-8')
+    assert '/downloader?url=https%3A%2F%2Fswa.co.id%2FPath' in html
 
 
 @override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)

@@ -6,6 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from lxml import etree
 
 from .cap import CapField
+from .urlutils import normalize_discovery_url
 
 CAPTCHA_LABEL = _('Verification')
 CAPTCHA_ERROR = _('Verification failed. Please try again.')
@@ -84,6 +85,10 @@ class FeedEditForm(forms.Form):
 
     def clean_uri(self):
         uri = self.cleaned_data['uri']
+        try:
+            uri = normalize_discovery_url(uri)
+        except ValueError as exc:
+            raise forms.ValidationError(_('Invalid URL format')) from exc
         if not getattr(settings, 'READER_ALLOW_PRIVATE', False):
             from pol.reader.errors import InvalidURLError
             from pol.reader.safety import assert_public_url

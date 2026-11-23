@@ -30,11 +30,22 @@ def test_index_redirects_to_local_setup_page():
     # Exactly one parameter, and its decoded value is the normalized URL.
     query = parse_qs(parsed.query)
     assert list(query) == ['url']
-    assert query['url'] == ['http://' + source]
+    assert query['url'] == ['https://' + source]
 
     # The value is percent-encoded, so reserved characters cannot escape it.
-    assert 'http://example.com' not in location
+    assert 'https://example.com' not in location
     assert '%26' in location and '%23' in location
+
+
+@override_settings(**TEST_SETTINGS)
+def test_index_lowercases_scheme_and_host():
+    data = {'url': 'Swa.co.id/Path?Q=Value#Frag'}
+    data.update(captcha_data())
+    response = Client().get('/en/', data)
+    assert response.status_code == 302
+
+    query = parse_qs(urlsplit(response['Location']).query)
+    assert query['url'] == ['https://swa.co.id/Path?Q=Value#Frag']
 
 
 @override_settings(**TEST_SETTINGS)
