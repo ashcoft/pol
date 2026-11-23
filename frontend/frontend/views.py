@@ -483,7 +483,8 @@ def myfeeds(request):
         feeds = Feed.objects.none()
 
     feeds = feeds.annotate(field_count=Count('feedfield')).order_by('-created')
-    return render(request, 'frontend/myfeeds.html', {'feeds': feeds})
+    return render(request, 'frontend/myfeeds.html',
+                  {'feeds': feeds, 'feed_page_url': FEED_PAGE_URL})
 
 
 def edit_feed(request, feed_id):

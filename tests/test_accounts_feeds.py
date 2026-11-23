@@ -305,6 +305,18 @@ def test_delete_requires_post(cleanup):
         '/en/myfeeds/delete/%s' % feed.id).status_code == 405
 
 
+def test_myfeeds_lists_generated_feed_link(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.get('/en/myfeeds')
+    assert response.status_code == 200
+    assert ('/feed/%s' % feed.id).encode() in response.content
+
+
 def test_edit_feed_page_has_selector_button(cleanup):
     owner = User.objects.create_user('test_owner', password=PASSWORD)
     feed = _make_feed(owner=owner)

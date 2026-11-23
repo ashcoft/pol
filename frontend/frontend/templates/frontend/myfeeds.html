@@ -25,6 +25,7 @@
     <tr>
       <th>{% trans "ID" %}</th>
       <th>{% trans "Page" %}</th>
+      <th>{% trans "Feed" %}</th>
       <th>{% trans "Fields" %}</th>
       <th>{% trans "Created" %}</th>
       <th></th>
@@ -35,6 +36,7 @@
     <tr>
       <td>{{ feed.id }}</td>
       <td><a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a></td>
+      <td><a href="{{ feed_page_url }}{{ feed.id }}" target="_blank" rel="noopener">{{ feed_page_url }}{{ feed.id }}</a></td>
       <td>{{ feed.field_count }}</td>
       <td>{{ feed.created|date:"Y-m-d H:i" }}</td>
       <td class="nowrap">
