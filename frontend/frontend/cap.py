@@ -1,3 +1,5 @@
+"""Cap captcha verification and Django form widget."""
+
 import json
 import urllib.error
 import urllib.request
@@ -22,8 +24,10 @@ def verify(token):
         'secret': settings.CAP_SECRET,
         'response': token,
     }).encode('utf-8')
-    url = '%s/%s/siteverify' % (
-        settings.CAP_API_URL.rstrip('/'), settings.CAP_SITE_KEY)
+    url = (
+        f'{settings.CAP_API_URL.rstrip("/")}/'
+        f'{settings.CAP_SITE_KEY}/siteverify'
+    )
     request = urllib.request.Request(
         url, data=payload,
         headers={'Content-Type': 'application/json'},
@@ -37,15 +41,21 @@ def verify(token):
 
 
 class CapWidget(forms.Widget):
+    """Render the Cap widget and read its hidden cap-token field."""
+
     def value_from_datadict(self, data, files, name):
+        """Return the token added by the Cap widget."""
         return data.get('cap-token') or data.get(name)
 
     def render(self, name, value, attrs=None, renderer=None):
+        """Render the Cap widget or the test-mode token input."""
         if getattr(settings, 'CAP_TEST_MODE', False):
             return mark_safe(
                 '<input type="hidden" name="cap-token" value="passed">')
-        endpoint = '%s/%s/' % (
-            settings.CAP_PUBLIC_URL.rstrip('/'), settings.CAP_SITE_KEY)
+        endpoint = (
+            f'{settings.CAP_PUBLIC_URL.rstrip("/")}/'
+            f'{settings.CAP_SITE_KEY}/'
+        )
         return format_html(
             '<script>window.CAP_CUSTOM_WASM_URL = "{}"; '
             'window.CAP_CUSTOM_HASHWX_URL = "{}";</script>'
@@ -59,6 +69,8 @@ class CapWidget(forms.Widget):
 
 
 class CapField(forms.Field):
+    """Form field that verifies a Cap token with capd."""
+
     widget = CapWidget
     default_error_messages: ClassVar[dict] = {
         'required': _('Complete the verification first.'),
