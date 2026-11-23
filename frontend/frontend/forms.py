@@ -7,7 +7,6 @@ from lxml import etree
 
 from .altcha import AltchaField
 
-
 CAPTCHA_LABEL = _('Verification')
 CAPTCHA_ERROR = _('Verification failed. Please try again.')
 

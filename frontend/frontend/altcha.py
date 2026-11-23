@@ -1,4 +1,6 @@
+import binascii
 import datetime
+from typing import ClassVar
 
 import altcha
 from django import forms
@@ -33,7 +35,7 @@ def verify(payload):
     try:
         result = altcha.verify_solution(
             payload, hmac_secret=settings.ALTCHA_HMAC_KEY)
-    except Exception:
+    except (ValueError, TypeError, KeyError, binascii.Error, OverflowError):
         return False
     if not result.verified:
         return False
@@ -42,14 +44,14 @@ def verify(payload):
         parsed = altcha.Payload.from_base64(payload)
         signature = parsed.challenge.signature or parsed.challenge.parameters.nonce
         expires_at = parsed.challenge.parameters.expires_at
-    except Exception:
+    except (ValueError, TypeError, KeyError, binascii.Error, OverflowError):
         return False
     if not signature:
         return False
 
     if expires_at:
         expires_at = datetime.datetime.fromtimestamp(
-            expires_at, tz=datetime.timezone.utc)
+            expires_at, tz=datetime.UTC)
     else:
         expires_at = timezone.now() + datetime.timedelta(
             seconds=settings.ALTCHA_TIMEOUT)
@@ -80,7 +82,7 @@ class AltchaWidget(forms.HiddenInput):
 
 class AltchaField(forms.Field):
     widget = AltchaWidget
-    default_error_messages = {
+    default_error_messages: ClassVar[dict] = {
         'required': _('Complete the verification first.'),
         'invalid': _('Verification failed. Please try again.'),
     }

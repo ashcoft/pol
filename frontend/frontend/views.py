@@ -680,6 +680,6 @@ def discover(request):
     except urllib.error.HTTPError as exc:
         return HttpResponse(exc.read(), status=exc.code,
                             content_type='application/json')
-    except Exception:
+    except (urllib.error.URLError, OSError, ValueError):
         return _json_error('Feed discovery failed', status=502)
     return HttpResponse(body, status=status, content_type='application/json')
