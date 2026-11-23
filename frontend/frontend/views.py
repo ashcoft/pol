@@ -111,38 +111,59 @@ def index(request):
 def contact(request):
     return render(request, 'frontend/contact.html')
 
-@ensure_csrf_cookie
-def setup(request):
-    if request.method != 'GET':
-        return HttpResponseBadRequest('Only GET method supported')
+class _BadRequest(Exception):
+    def __init__(self, message, captcha=False):
+        super().__init__(message)
+        self.message = message
+        self.captcha = captcha
 
-    feed = None
+
+class _SetupDenied(Exception):
+    pass
+
+
+def _setup_target(request):
     feed_id = request.GET.get('feed_id')
+    feed = None
     if feed_id:
         if not str(feed_id).isdigit():
-            return HttpResponseBadRequest('Invalid feed id')
+            raise _BadRequest('Invalid feed id')
         feed = get_object_or_404(Feed, pk=feed_id)
         if not _can_manage(request, feed, allow_legacy_claim=True):
-            return _deny_feed_access(request)
+            raise _SetupDenied()
         raw_url = feed.uri
     else:
         raw_url = request.GET.get('url', '')
 
     if not raw_url:
-        return HttpResponseBadRequest('Url is required')
+        raise _BadRequest('Url is required')
 
     try:
         url = _normalize_discovery_url(raw_url)
-    except ValueError:
-        return HttpResponseBadRequest('Invalid url')
+    except ValueError as exc:
+        raise _BadRequest('Invalid url') from exc
 
     if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
         from pol.reader.errors import InvalidURLError
         from pol.reader.safety import assert_public_url
         try:
             assert_public_url(url)
-        except InvalidURLError:
-            return HttpResponseBadRequest('This URL is not allowed.')
+        except InvalidURLError as exc:
+            raise _BadRequest('This URL is not allowed.') from exc
+
+    return feed, url
+
+
+@ensure_csrf_cookie
+def setup(request):
+    if request.method != 'GET':
+        return HttpResponseBadRequest('Only GET method supported')
+    try:
+        feed, url = _setup_target(request)
+    except _SetupDenied:
+        return _deny_feed_access(request)
+    except _BadRequest as exc:
+        return HttpResponseBadRequest(exc.message)
 
     setup_initial = None
     if feed:
@@ -157,12 +178,13 @@ def setup(request):
 
     external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(url, safe='')
     return render(request, 'frontend/setup.html',
-                    {
-                        'external_page_url': external_page_url,
-                        'page_url': url,
-                        'feed_id': feed.id if feed else None,
-                        'setup_initial': setup_initial,
-                    })
+                  {
+                      'external_page_url': external_page_url,
+                      'page_url': url,
+                      'feed_id': feed.id if feed else None,
+                      'setup_initial': setup_initial,
+                  })
+
 
 def _validate_html(html):
 
@@ -355,37 +377,26 @@ def setup_create_feed(request):
 def _validate_selectors(selectors):
     if not isinstance(selectors, list) or len(selectors) != 2:
         return False
-    feed_xpath = selectors[0]
-    item_xpathes = selectors[1]
-
-    if not isinstance(feed_xpath, str):
+    feed_xpath, item_xpathes = selectors
+    if not isinstance(feed_xpath, str) or not isinstance(item_xpathes, dict):
         return False
-    if not isinstance(item_xpathes, dict):
+    if not feed_xpath.strip() or not item_xpathes:
         return False
 
     fields = list(Field.objects.all())
     by_name = {field.name: field for field in fields}
     by_id = {field.id: field for field in fields}
 
-    item_xpathes_out = {}
-
+    result = {}
     for key, xpath in item_xpathes.items():
         field = by_name.get(key)
-        if field is None:
-            try:
-                field = by_id.get(int(key))
-            except (TypeError, ValueError):
-                field = None
-        if field is None:
-            continue
-        if not isinstance(xpath, str):
+        if field is None and str(key).isdigit():
+            field = by_id.get(int(key))
+        if field is None or not isinstance(xpath, str):
             return False
-        item_xpathes_out[field.id] = [xpath, field.required]
+        result[field.id] = [xpath, field.required]
 
-    if not feed_xpath.strip() or not item_xpathes_out:
-        return False
-
-    return [feed_xpath, item_xpathes_out]
+    return [feed_xpath, result]
 
 
 def _name_field_results(messages, posts):
@@ -422,44 +433,55 @@ def setup_validate_selectors(request):
 
         return HttpResponse(json.dumps({'success': success, 'messages': messages, 'posts': posts}))
 
+def _setup_ext_payload(request):
+    try:
+        obj = json.loads(request.body)
+    except (TypeError, ValueError) as exc:
+        raise _BadRequest('Invalid JSON body') from exc
+    if 'selectors' not in obj or 'snapshot_time' not in obj or 'url' not in obj:
+        raise _BadRequest(
+            '"selectors", "snapshot_time" and "url" are required')
+    file_name = obj['snapshot_time']
+    if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
+        raise _BadRequest('"snapshot_time" is invalid')
+    selectors = _validate_selectors(obj['selectors'])
+    if not selectors:
+        raise _BadRequest('selectors are invalid')
+    return obj, selectors, file_name
+
+
 def setup_create_feed_ext(request):
     from .setup_tool_ext import build_xpath_results
 
-    if request.method == 'POST':
-        obj = json.loads(request.body)
-        if 'selectors' not in obj or 'snapshot_time' not in obj or 'url' not in obj:
-            return HttpResponseBadRequest('"selectors", "snapshot_time" and "url" are required')
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
 
-        selectors = obj['selectors']
-        file_name = obj['snapshot_time']
-
-        if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
-            return HttpResponseBadRequest('"snapshot_time" is invalid')
-
-        validated_selectors = _validate_selectors(selectors)
-
-        if not validated_selectors:
-            return HttpResponseBadRequest('selectors are invalid')
-
-        messages, posts, success = build_xpath_results(validated_selectors, file_name)
+    try:
+        obj, selectors, file_name = _setup_ext_payload(request)
+        messages, posts, success = build_xpath_results(selectors, file_name)
         messages, posts = _name_field_results(messages, posts)
+        if not success:
+            return HttpResponse(json.dumps(
+                {'success': False, 'messages': messages}))
 
-        if success:
-            url = obj['url']
-            try:
-                feed = _feed_for_update(obj)
-            except ValueError:
-                return HttpResponseBadRequest('Invalid feed id')
-
-            if feed:
-                feed_id = _update_feed(request, feed, url, validated_selectors, True)
-                if feed_id is None:
-                    return _deny_feed_access(request)
-            else:
-                feed_id = _create_feed(request, url, validated_selectors, True)
-            return HttpResponse(json.dumps({'success': True, 'url': reverse('preview', args=(feed_id,))}))
+        feed = _feed_for_update(obj)
+        if feed:
+            feed_id = _update_feed(request, feed, obj['url'], selectors, True)
+            if feed_id is None:
+                raise _SetupDenied()
         else:
-            return HttpResponse(json.dumps({'success': False, 'messages': messages}))
+            feed_id = _create_feed(request, obj['url'], selectors, True)
+        return HttpResponse(json.dumps({
+            'success': True,
+            'url': reverse('preview', args=(feed_id,)),
+        }))
+    except _BadRequest as exc:
+        return HttpResponseBadRequest(exc.message)
+    except ValueError:
+        return HttpResponseBadRequest('Invalid feed id')
+    except _SetupDenied:
+        return _deny_feed_access(request)
+
 
 def preview(request, feed_id):
     if request.method != 'GET':
@@ -642,35 +664,43 @@ def _request_payload(request):
     return request.POST
 
 
-def discover(request):
-    """Proxy feed discovery to the downloader after a captcha check."""
-    if request.method not in ('GET', 'POST'):
-        return HttpResponseNotAllowed(['GET', 'POST'])
-
-    payload = _request_payload(request)
-    if payload is None:
-        return HttpResponseBadRequest('Invalid JSON body')
-
+def _discover_url(payload):
     raw_url = payload.get('url')
     if not isinstance(raw_url, str) or not raw_url.strip():
-        return HttpResponseBadRequest('Url is required')
-    raw_url = raw_url.strip()
+        raise _BadRequest('Url is required')
     try:
-        url = _normalize_discovery_url(raw_url)
-    except ValueError:
-        return HttpResponseBadRequest('Invalid url')
-
+        url = _normalize_discovery_url(raw_url.strip())
+    except ValueError as exc:
+        raise _BadRequest('Invalid url') from exc
     if not url.lower().startswith(('http://', 'https://')):
-        return HttpResponseBadRequest('Invalid url')
-
+        raise _BadRequest('Invalid url')
     form_data = payload.copy()
     form_data['url'] = url
     form = IndexForm(form_data)
     if not form.is_valid():
         if form.errors.get('captcha'):
-            return _json_error(
-                str(form.errors['captcha'][0]), captcha=True)
-        return HttpResponseBadRequest('Invalid url')
+            raise _BadRequest(str(form.errors['captcha'][0]), captcha=True)
+        raise _BadRequest('Invalid url')
+    return url
+
+
+def _bad_request_response(exc):
+    if exc.captcha:
+        return _json_error(exc.message, captcha=True)
+    return HttpResponseBadRequest(exc.message)
+
+
+def discover(request):
+    """Proxy feed discovery to the downloader after a captcha check."""
+    if request.method not in ('GET', 'POST'):
+        return HttpResponseNotAllowed(['GET', 'POST'])
+    payload = _request_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest('Invalid JSON body')
+    try:
+        url = _discover_url(payload)
+    except _BadRequest as exc:
+        return _bad_request_response(exc)
 
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:

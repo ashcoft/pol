@@ -25,37 +25,23 @@ def create_challenge():
     )
 
 
-def verify(payload):
-    """Verify an Altcha payload and consume its challenge exactly once."""
-    if getattr(settings, 'ALTCHA_TEST_MODE', False):
-        return True
-    if not payload:
-        return False
-
+def _verify_solution(payload):
     try:
         result = altcha.verify_solution(
             payload, hmac_secret=settings.ALTCHA_HMAC_KEY)
     except (ValueError, TypeError, KeyError, binascii.Error, OverflowError):
         return False
-    if not result.verified:
-        return False
+    return result.verified
 
+
+def _parse_challenge(payload):
     try:
-        parsed = altcha.Payload.from_base64(payload)
-        signature = parsed.challenge.signature or parsed.challenge.parameters.nonce
-        expires_at = parsed.challenge.parameters.expires_at
+        return altcha.Payload.from_base64(payload)
     except (ValueError, TypeError, KeyError, binascii.Error, OverflowError):
-        return False
-    if not signature:
-        return False
+        return None
 
-    if expires_at:
-        expires_at = datetime.datetime.fromtimestamp(
-            expires_at, tz=datetime.UTC)
-    else:
-        expires_at = timezone.now() + datetime.timedelta(
-            seconds=settings.ALTCHA_TIMEOUT)
 
+def _consume_challenge(signature, expires_at):
     AltchaUsedChallenge.objects.filter(expires_at__lt=timezone.now()).delete()
     try:
         AltchaUsedChallenge.objects.create(
@@ -63,6 +49,32 @@ def verify(payload):
     except IntegrityError:
         return False
     return True
+
+
+def verify(payload):
+    """Verify an Altcha payload and consume its challenge exactly once."""
+    if getattr(settings, 'ALTCHA_TEST_MODE', False):
+        return True
+    if not payload or not _verify_solution(payload):
+        return False
+
+    parsed = _parse_challenge(payload)
+    if parsed is None:
+        return False
+
+    signature = parsed.challenge.signature or parsed.challenge.parameters.nonce
+    if not signature:
+        return False
+
+    expires_at = parsed.challenge.parameters.expires_at
+    if expires_at:
+        expires_at = datetime.datetime.fromtimestamp(
+            expires_at, tz=datetime.UTC)
+    else:
+        expires_at = timezone.now() + datetime.timedelta(
+            seconds=settings.ALTCHA_TIMEOUT)
+
+    return _consume_challenge(signature, expires_at)
 
 
 class AltchaWidget(forms.HiddenInput):
