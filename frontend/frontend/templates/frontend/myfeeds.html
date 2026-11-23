@@ -20,6 +20,7 @@
 {% endif %}
 
 {% if feeds %}
+<p><a class="btn" href="{% url 'myfeeds_opml' %}">{% trans "Export OPML" %}</a></p>
 <table class="table table-striped">
   <thead>
     <tr>

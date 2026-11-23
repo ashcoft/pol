@@ -3,6 +3,7 @@ import urllib.parse
 import urllib.request
 import json
 import re
+import xml.etree.ElementTree as ET
 
 from django.contrib.auth import login as auth_login, logout as auth_logout
 from django.conf import settings as django_settings
@@ -473,18 +474,38 @@ def preview(request, feed_id):
                   })
 
 
-def myfeeds(request):
+def _feeds_for_request(request):
     if request.user.is_authenticated:
-        feeds = Feed.objects.filter(owner=request.user)
-    elif request.session.session_key:
-        feeds = Feed.objects.filter(
+        return Feed.objects.filter(owner=request.user)
+    if request.session.session_key:
+        return Feed.objects.filter(
             owner__isnull=True, session_key=request.session.session_key)
-    else:
-        feeds = Feed.objects.none()
+    return Feed.objects.none()
 
+
+def myfeeds(request):
+    feeds = _feeds_for_request(request)
     feeds = feeds.annotate(field_count=Count('feedfield')).order_by('-created')
     return render(request, 'frontend/myfeeds.html',
                   {'feeds': feeds, 'feed_page_url': FEED_PAGE_URL})
+
+
+def myfeeds_opml(request):
+    feeds = _feeds_for_request(request).order_by('id')
+
+    opml = ET.Element('opml', version='2.0')
+    head = ET.SubElement(opml, 'head')
+    ET.SubElement(head, 'title').text = 'Polite Pol feeds'
+    body = ET.SubElement(opml, 'body')
+    group = ET.SubElement(body, 'outline', text='Polite Pol', title='Polite Pol')
+    for feed in feeds:
+        ET.SubElement(
+            group, 'outline', type='rss', text=feed.uri, title=feed.uri,
+            xmlUrl=request.build_absolute_uri(FEED_PAGE_URL + str(feed.id)),
+            htmlUrl=feed.uri)
+
+    payload = ET.tostring(opml, encoding='utf-8', xml_declaration=True)
+    return HttpResponse(payload, content_type='text/x-opml; charset=utf-8')
 
 
 def edit_feed(request, feed_id):

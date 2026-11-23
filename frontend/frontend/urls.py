@@ -25,6 +25,7 @@ urlpatterns = i18n_patterns(
     url(r'^setup/([0-9]+)$', views.edit_feed, name='edit_feed'),
     url(r'^preview/([0-9]+)$', views.preview, name='preview'),
     url(r'^myfeeds$', views.myfeeds, name='myfeeds'),
+    url(r'^myfeeds/opml$', views.myfeeds_opml, name='myfeeds_opml'),
     url(r'^myfeeds/delete/([0-9]+)$', views.delete_feed, name='delete_feed'),
     url(r'^accounts/signup/?$', views.signup, name='signup'),
     url(r'^accounts/login/?$', views.login_view, name='login'),

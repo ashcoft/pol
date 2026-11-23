@@ -317,6 +317,35 @@ def test_myfeeds_lists_generated_feed_link(cleanup):
     assert ('/feed/%s' % feed.id).encode() in response.content
 
 
+def test_myfeeds_opml_lists_feeds(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.get('/en/myfeeds/opml')
+    assert response.status_code == 200
+    assert response['Content-Type'].startswith('text/x-opml')
+    body = response.content.decode('utf-8')
+    assert '<opml' in body
+    assert ('/feed/%s' % feed.id) in body
+    assert feed.uri in body
+
+
+def test_myfeeds_opml_excludes_other_users_feeds(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    other = User.objects.create_user('test_other', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(other)
+
+    response = client.get('/en/myfeeds/opml')
+    assert response.status_code == 200
+    assert ('/feed/%s' % feed.id).encode() not in response.content
+
+
 def test_edit_feed_page_has_selector_button(cleanup):
     owner = User.objects.create_user('test_owner', password=PASSWORD)
     feed = _make_feed(owner=owner)
