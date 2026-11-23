@@ -1,5 +1,17 @@
 # [RSSPol](https://feed.dony.me "RSS Feed Generator")
 
+[![Latest Release](https://img.shields.io/github/v/release/ashcoft/pol)](https://github.com/ashcoft/pol/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python Version](https://img.shields.io/badge/Python-%E2%89%A53.12-blue?logo=python&logoColor=white)](https://python.org)
+[![Django Version](https://img.shields.io/badge/Django-6.1-092E20?logo=django&logoColor=white)](https://www.djangoproject.com)
+[![PostgreSQL Version](https://img.shields.io/badge/PostgreSQL-19-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-ashcoft%2Fpol-2496ED?logo=docker&logoColor=white)](https://github.com/ashcoft/pol/pkgs/container/pol)
+
+[![Tests](https://img.shields.io/github/actions/workflow/status/ashcoft/pol/ci.yml?label=tests)](https://github.com/ashcoft/pol/actions/workflows/ci.yml)
+[![E2E tests](https://img.shields.io/github/actions/workflow/status/ashcoft/pol/e2e.yml?label=e2e)](https://github.com/ashcoft/pol/actions/workflows/e2e.yml)
+[![Docker publish](https://img.shields.io/github/actions/workflow/status/ashcoft/pol/docker-publish.yml?label=docker)](https://github.com/ashcoft/pol/actions/workflows/docker-publish.yml)
+[![Snyk security](https://snyk.io/test/github/ashcoft/pol/badge.svg)](https://snyk.io/test/github/ashcoft/pol)
+
 RSS feed generator website with user friendly interface.
 
 ![PolitePaul](frontend/frontend/assets/frontend/images/apple-touch-icon-144x144-precomposed.png "PolitePaul")
