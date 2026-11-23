@@ -94,6 +94,11 @@ in the capd dashboard (`CAP_PUBLIC_URL`, log in with `CAP_ADMIN_KEY`), then set
 capd origin; `CAP_API_URL` is the server-to-server origin (default
 `http://cap:3000`). `CAP_TEST_MODE` is for the E2E stack only.
 
+Site keys live in Cap's Valkey volume. If that volume is reset, create a new
+key in the dashboard and update `CAP_SITE_KEY` / `CAP_SECRET`, then recreate
+the app. Behind nginx, set the capd visitor IP header to `X-Forwarded-For` so
+Cap sees the real client IP instead of the proxy's.
+
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
 `max_items`, `offline`, `force`, `no_meta`, plus the custom-feed rules `mode`,
