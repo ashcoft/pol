@@ -221,10 +221,10 @@ READER_VERIFY_SSL = os.environ.get('POL_READER_VERIFY_SSL', '1').lower() not in 
 READER_ALLOW_PRIVATE = os.environ.get('POL_READER_ALLOW_PRIVATE', '0').lower() in ('1', 'true', 'yes', 'on')
 DOWNLOADER_BASE_URL = os.environ.get('DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
 
-# Altcha proof-of-work captcha (self-hosted; no external service).
-ALTCHA_HMAC_KEY = os.environ.get('ALTCHA_HMAC_KEY', SECRET_KEY)
-ALTCHA_ALGORITHM = os.environ.get('ALTCHA_ALGORITHM', 'PBKDF2/SHA-256')
-ALTCHA_COST = int(os.environ.get('ALTCHA_COST', '10000'))
-ALTCHA_TIMEOUT = int(os.environ.get('ALTCHA_TIMEOUT', '1200'))
-# Test-only switch: any non-empty payload is accepted. Never enable in production.
-ALTCHA_TEST_MODE = os.environ.get('ALTCHA_TEST_MODE', '0').lower() in ('1', 'true', 'yes', 'on')
+# Cap captcha (self-hosted capd server; no external service).
+CAP_API_URL = os.environ.get('CAP_API_URL', 'http://cap:3000')
+CAP_PUBLIC_URL = os.environ.get('CAP_PUBLIC_URL', '')
+CAP_SITE_KEY = os.environ.get('CAP_SITE_KEY', '')
+CAP_SECRET = os.environ.get('CAP_SECRET', '')
+# Test-only switch: any non-empty token is accepted. Never enable in production.
+CAP_TEST_MODE = os.environ.get('CAP_TEST_MODE', '0').lower() in ('1', 'true', 'yes', 'on')

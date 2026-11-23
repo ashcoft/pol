@@ -52,7 +52,8 @@ def _settings():
     with override_settings(
             ROOT_URLCONF='frontend.frontend.urls',
             ALLOWED_HOSTS=['testserver'],
-            READER_ALLOW_PRIVATE=True):
+            READER_ALLOW_PRIVATE=True,
+            CAP_TEST_MODE=True):
         yield
 
 
@@ -521,7 +522,7 @@ def test_login_rejects_wrong_captcha(cleanup):
     client = Client()
     data = {'username': 'test_owner', 'password': PASSWORD}
     data.update(captcha_data())
-    data['captcha'] = 'wrong-answer'
+    data['cap-token'] = 'wrong-answer'
     response = client.post('/en/accounts/login/', data)
     assert response.status_code == 200
     assert b'Verification failed' in response.content
@@ -534,7 +535,7 @@ def test_login_does_not_check_password_until_captcha_passes(cleanup):
 
     data = {'username': 'test_owner', 'password': 'wrong-password'}
     data.update(captcha_data())
-    data['captcha'] = 'wrong-answer'
+    data['cap-token'] = 'wrong-answer'
     response = client.post('/en/accounts/login/', data)
     assert b'Verification failed' in response.content
     assert b'correct username and password' not in response.content
@@ -545,8 +546,10 @@ def test_login_does_not_check_password_until_captcha_passes(cleanup):
     assert b'correct username and password' in response.content
 
 
+@override_settings(CAP_TEST_MODE=False, CAP_PUBLIC_URL='https://cap.example',
+                   CAP_SITE_KEY='site')
 def test_login_page_renders_captcha(cleanup):
     response = Client().get('/en/accounts/login/')
     assert response.status_code == 200
-    assert b'altcha-widget' in response.content
-    assert b'challenge="/altcha/challenge"' in response.content
+    assert b'cap-widget' in response.content
+    assert b'data-cap-api-endpoint="https://cap.example/site/"' in response.content

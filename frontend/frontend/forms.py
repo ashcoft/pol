@@ -5,7 +5,7 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from lxml import etree
 
-from .altcha import AltchaField
+from .cap import CapField
 
 CAPTCHA_LABEL = _('Verification')
 CAPTCHA_ERROR = _('Verification failed. Please try again.')
@@ -23,14 +23,14 @@ def _validate_xpath(value):
 
 class IndexForm(forms.Form):
     url = forms.CharField(max_length=2000, widget=forms.TextInput(attrs={'class': 'input-xxlarge', 'placeholder': 'http://'}))
-    captcha = AltchaField(
+    captcha = CapField(
         label=CAPTCHA_LABEL,
         error_messages={'invalid': CAPTCHA_ERROR},
     )
 
 
 class LoginForm(AuthenticationForm):
-    captcha = AltchaField(
+    captcha = CapField(
         label=CAPTCHA_LABEL,
         error_messages={'invalid': CAPTCHA_ERROR},
     )

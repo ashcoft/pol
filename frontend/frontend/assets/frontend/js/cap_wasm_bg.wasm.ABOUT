@@ -1,0 +1,7 @@
+about_resource: cap_wasm_bg.wasm
+name: @cap.js/wasm
+version: 0.0.8
+download_url: https://registry.npmjs.org/@cap.js/wasm/-/wasm-0.0.8.tgz
+package_url: pkg:npm/%40cap.js/wasm@0.0.8
+license_expression: apache-2.0
+copyright: Copyright (c) 2025 Tiago Montenegro

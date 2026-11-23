@@ -11,7 +11,7 @@ from tests.captcha_utils import captcha_data
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 django.setup()
 
-TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'])
+TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'], CAP_TEST_MODE=True)
 
 
 @override_settings(**TEST_SETTINGS)

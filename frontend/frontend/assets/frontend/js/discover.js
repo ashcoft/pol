@@ -305,21 +305,21 @@
         }
 
         function captchaValue() {
-            return $('input[name="captcha"]').val() || '';
+            return $('input[name="cap-token"]').val() || '';
         }
 
         function resetCaptcha() {
-            var widget = document.querySelector('altcha-widget');
+            var widget = document.querySelector('cap-widget');
             if (widget && typeof widget.reset === 'function') {
                 widget.reset();
-                if (typeof widget.verify === 'function') {
-                    widget.verify();
+                if (typeof widget.solve === 'function') {
+                    widget.solve();
                 }
             }
         }
 
         function focusCaptcha() {
-            var widget = document.querySelector('altcha-widget');
+            var widget = document.querySelector('cap-widget');
             if (widget && widget.scrollIntoView) {
                 widget.scrollIntoView({behavior: 'smooth', block: 'center'});
             }

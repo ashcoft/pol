@@ -64,7 +64,7 @@ existing feeds:
 
 The index page accepts `?q=<page url>` (for example
 `/?q=https://www.cyclingnews.com`) to prefill the search box. Discovery is
-protected by a self-hosted Altcha proof-of-work challenge, so the user
+protected by a self-hosted Cap proof-of-work challenge, so the user
 completes the verification widget and then presses **Find RSS**. Each result
 has a **Preview** action that opens a slide-in pane with the latest feed items,
 plus **Copy** and **Open** actions, mirroring the rss-finder interface.
@@ -83,14 +83,16 @@ each path accordingly (see `nginx/default.site-example`):
 | `GET /read?url=<feed>&callback=cb` | JSONP output. |
 | `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). Captcha required. |
 | `GET /api/find-feeds?url=<page>` | Alias of `/discover`. Captcha required. |
-| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus a solved Altcha `captcha` field. |
+| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus a solved Cap `cap-token` field. |
 | `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
 
-The discovery endpoints require a solved Altcha `captcha` payload. Load the
-index page, complete the Altcha widget, then send its hidden `captcha` field
-with the URL. Altcha is self-hosted and needs no external service or API keys;
-tune it with `ALTCHA_HMAC_KEY` (defaults to `SECRET_KEY`), `ALTCHA_ALGORITHM`,
-`ALTCHA_COST`, and `ALTCHA_TIMEOUT`.
+The discovery endpoints require a solved Cap token. Load the index page,
+complete the Cap widget, then send its hidden `cap-token` field with the URL.
+Cap is self-hosted: the compose stack runs `capd` and Valkey. Create a site key
+in the capd dashboard (`CAP_PUBLIC_URL`, log in with `CAP_ADMIN_KEY`), then set
+`CAP_SITE_KEY` and `CAP_SECRET` in `.env`. `CAP_PUBLIC_URL` is the browser-facing
+capd origin; `CAP_API_URL` is the server-to-server origin (default
+`http://cap:3000`). `CAP_TEST_MODE` is for the E2E stack only.
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
@@ -109,8 +111,8 @@ curl 'http://localhost/read?url=https://example.com/feed.xml'
 curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltext=1'
 ```
 
-Feed discovery needs a solved Altcha payload, so use the web interface or
-submit the widget's `captcha` field explicitly.
+Feed discovery needs a solved Cap token, so use the web interface or submit
+the widget's `cap-token` field explicitly.
 
 ## Command line
 
@@ -254,7 +256,9 @@ The template proxies `/` to the Django server on port 8000 (Gunicorn in
 production). It also sends `/discover` and `/api/find-feeds` to Django so the
 captcha check runs, while `/downloader`, `/feed`, `/feed1`, `/read`, `/rss` and
 the rest of `/api/` (the preview endpoint) go to the downloader on port 1234.
-The Docker stack publishes those same loopback ports for the host nginx.
+The Docker stack publishes those same loopback ports for the host nginx. The
+stack also runs `capd` on `127.0.0.1:3000`; use `nginx/cap.site-example` for the
+browser-facing Cap origin and set `CAP_PUBLIC_URL` to it.
 
 The template forwards the browser `Host` header so Django's CSRF checks pass
 behind the proxy. If you reach the app by anything other than
@@ -426,8 +430,6 @@ docker compose -f docker-compose.prod.yml up -d
 
 # database backup
 docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
-
-# Altcha used-challenge rows are cleaned automatically during verification.
 
 # image backup (for hosts that cannot pull from GHCR)
 POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)

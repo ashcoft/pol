@@ -18,7 +18,7 @@ from django.test import Client, override_settings  # noqa: E402
 from frontend.frontend import views  # noqa: E402
 from tests.captcha_utils import captcha_data  # noqa: E402
 
-TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'])
+TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['testserver'], CAP_TEST_MODE=True)
 
 
 @override_settings(**TEST_SETTINGS)
@@ -103,7 +103,7 @@ def test_discover_rejects_wrong_captcha(http_server, monkeypatch):
 
     data = {'url': 'https://example.com/'}
     data.update(captcha_data())
-    data['captcha'] = 'wrong-answer'
+    data['cap-token'] = 'wrong-answer'
     response = Client().get('/discover', data)
     assert response.status_code == 400
     assert json.loads(response.content)['captcha'] is True
@@ -112,14 +112,25 @@ def test_discover_rejects_wrong_captcha(http_server, monkeypatch):
 
 @override_settings(**TEST_SETTINGS)
 def test_discover_captcha_is_single_use(http_server, monkeypatch):
+    state = {'used': False}
+
+    def verify_route(method, handler):
+        if state['used']:
+            return 404, {'Content-Type': 'application/json'}, '{"success": false}'
+        state['used'] = True
+        return 200, {'Content-Type': 'application/json'}, '{"success": true}'
+
+    http_server.routes['/site/siteverify'] = verify_route
     http_server.routes['/discover'] = (
         200, {'Content-Type': 'application/json'}, '{"feeds": []}')
     monkeypatch.setattr(views, 'DOWNLOADER_BASE_URL', http_server.base_url)
 
-    data = {'url': 'https://example.com/'}
-    data.update(captcha_data())
-    assert Client().get('/discover', data).status_code == 200
-    assert Client().get('/discover', data).status_code == 400
+    data = {'url': 'https://example.com/', 'cap-token': 'token'}
+    with override_settings(
+            CAP_TEST_MODE=False, CAP_API_URL=http_server.base_url,
+            CAP_SITE_KEY='site', CAP_SECRET='secret'):
+        assert Client().get('/discover', data).status_code == 200
+        assert Client().get('/discover', data).status_code == 400
 
 
 @override_settings(**TEST_SETTINGS)
@@ -164,22 +175,33 @@ def test_discover_rejects_non_string_url():
     assert response.status_code == 400
 
 
-@override_settings(**TEST_SETTINGS)
-def test_index_renders_altcha_widget():
+@override_settings(**dict(TEST_SETTINGS, CAP_TEST_MODE=False,
+                          CAP_PUBLIC_URL='https://cap.example',
+                          CAP_SITE_KEY='site'))
+def test_index_renders_cap_widget():
     response = Client().get('/en/')
     assert response.status_code == 200
     html = response.content.decode('utf-8')
-    assert 'altcha-widget' in html
-    assert 'challenge="/altcha/challenge"' in html
+    assert 'cap-widget' in html
+    assert 'data-cap-api-endpoint="https://cap.example/site/"' in html
 
 
-@override_settings(**TEST_SETTINGS)
-def test_altcha_challenge_endpoint():
-    response = Client().get('/altcha/challenge')
-    assert response.status_code == 200
-    payload = json.loads(response.content)
-    assert 'parameters' in payload
-    assert 'signature' in payload
+def test_cap_siteverify_calls_server(http_server):
+    from frontend.frontend import cap
+
+    http_server.routes['/site/siteverify'] = (
+        200, {'Content-Type': 'application/json'}, '{"success": true}')
+    with override_settings(
+            CAP_TEST_MODE=False, CAP_API_URL=http_server.base_url,
+            CAP_SITE_KEY='site', CAP_SECRET='secret'):
+        assert cap.verify('token') is True
+
+    http_server.routes['/site/siteverify'] = (
+        200, {'Content-Type': 'application/json'}, '{"success": false}')
+    with override_settings(
+            CAP_TEST_MODE=False, CAP_API_URL=http_server.base_url,
+            CAP_SITE_KEY='site', CAP_SECRET='secret'):
+        assert cap.verify('token') is False
 
 
 @override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)

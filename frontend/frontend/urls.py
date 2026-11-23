@@ -40,4 +40,3 @@ urlpatterns.append(url(r'^setup_create_feed_ext$', views.setup_create_feed_ext, 
 urlpatterns.append(url(r'^setup_validate_selectors$', views.setup_validate_selectors, name='setup_validate_selectors'))
 urlpatterns.append(url(r'^discover$', views.discover, name='discover'))
 urlpatterns.append(url(r'^api/find-feeds$', views.discover, name='find_feeds'))
-urlpatterns.append(url(r'^altcha/challenge$', views.altcha_challenge, name='altcha_challenge'))

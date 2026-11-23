@@ -71,9 +71,9 @@ def _serve_discovery(http_server):
 
 
 def _wait_for_captcha(page):
-    # The E2E stack sets ALTCHA_TEST_MODE=1; the widget fills the payload.
+    # The E2E stack sets CAP_TEST_MODE=1; the test input is pre-filled.
     page.wait_for_function(
-        "document.querySelector('input[name=\"captcha\"]')"
+        "document.querySelector('input[name=\"cap-token\"]')"
         "?.value.length > 0")
 
 
@@ -91,7 +91,7 @@ def test_home_page_loads(page):
     expect(page).to_have_title(re.compile('Polite'))
     expect(page.get_by_role('heading', name='RSS Finder')).to_be_visible()
     expect(page.locator('input[name="url"]')).to_be_visible()
-    expect(page.locator('input[name="captcha"]')).to_have_count(1)
+    expect(page.locator('input[name="cap-token"]')).to_have_count(1)
     expect(page.locator('input[type="submit"]')).to_be_visible()
 
 
