@@ -170,7 +170,7 @@ def test_index_renders_altcha_widget():
     assert response.status_code == 200
     html = response.content.decode('utf-8')
     assert 'altcha-widget' in html
-    assert 'challengeurl="/altcha/challenge"' in html
+    assert 'challenge="/altcha/challenge"' in html
 
 
 @override_settings(**TEST_SETTINGS)

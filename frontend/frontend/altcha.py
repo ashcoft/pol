@@ -65,15 +65,16 @@ def verify(payload):
 
 class AltchaWidget(forms.HiddenInput):
     def render(self, name, value, attrs=None, renderer=None):
-        test = ' test' if getattr(settings, 'ALTCHA_TEST_MODE', False) else ''
+        if getattr(settings, 'ALTCHA_TEST_MODE', False):
+            return format_html(
+                '<input type="hidden" name="{}" value="passed">', name)
         return format_html(
             '<script type="module" src="{}"></script>'
-            '<altcha-widget name="{}" challengeurl="{}" auto="onload" '
-            'hidefooter hidelogo{}></altcha-widget>',
+            '<altcha-widget name="{}" challenge="{}" auto="onload" '
+            'type="checkbox" display="standard"></altcha-widget>',
             static('frontend/js/altcha.min.js'),
             name,
             reverse('altcha_challenge'),
-            test,
         )
 
 

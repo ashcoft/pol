@@ -549,4 +549,4 @@ def test_login_page_renders_captcha(cleanup):
     response = Client().get('/en/accounts/login/')
     assert response.status_code == 200
     assert b'altcha-widget' in response.content
-    assert b'challengeurl="/altcha/challenge"' in response.content
+    assert b'challenge="/altcha/challenge"' in response.content

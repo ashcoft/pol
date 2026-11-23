@@ -91,7 +91,7 @@ def test_home_page_loads(page):
     expect(page).to_have_title(re.compile('Polite'))
     expect(page.get_by_role('heading', name='RSS Finder')).to_be_visible()
     expect(page.locator('input[name="url"]')).to_be_visible()
-    expect(page.locator('altcha-widget')).to_be_visible()
+    expect(page.locator('input[name="captcha"]')).to_have_count(1)
     expect(page.locator('input[type="submit"]')).to_be_visible()
 
 
