@@ -87,11 +87,13 @@ def _make_feed(owner=None, session_key=''):
 
 def test_signup_logs_in_and_lists_feeds(cleanup):
     client = Client()
-    response = client.post('/en/accounts/signup/', {
+    data = {
         'username': 'test_signup_user',
         'password1': PASSWORD,
         'password2': PASSWORD,
-    })
+    }
+    data.update(captcha_data())
+    response = client.post('/en/accounts/signup/', data)
     assert response.status_code == 302
     assert response['Location'] == '/en/myfeeds'
     assert User.objects.filter(username='test_signup_user').exists()
@@ -99,6 +101,18 @@ def test_signup_logs_in_and_lists_feeds(cleanup):
     response = client.get('/en/myfeeds')
     assert response.status_code == 200
     assert b'My feeds' in response.content
+
+
+def test_signup_requires_captcha(cleanup):
+    client = Client()
+    response = client.post('/en/accounts/signup/', {
+        'username': 'test_signup_user',
+        'password1': PASSWORD,
+        'password2': PASSWORD,
+    })
+    assert response.status_code == 200
+    assert b'Verification' in response.content
+    assert not User.objects.filter(username='test_signup_user').exists()
 
 
 def test_owner_can_edit_and_other_user_cannot(cleanup):

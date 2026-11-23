@@ -50,6 +50,11 @@ class LoginForm(AuthenticationForm):
 
 
 class SignUpForm(UserCreationForm):
+    captcha = CapField(
+        label=CAPTCHA_LABEL,
+        error_messages={'invalid': CAPTCHA_ERROR},
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name in ('username', 'password1', 'password2'):

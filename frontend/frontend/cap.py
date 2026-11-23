@@ -60,7 +60,7 @@ class CapWidget(forms.Widget):
             '<script>window.CAP_CUSTOM_WASM_URL = "{}"; '
             'window.CAP_CUSTOM_HASHWX_URL = "{}";</script>'
             '<script src="{}"></script>'
-            '<cap-widget data-cap-api-endpoint="{}"></cap-widget>',
+            '<cap-widget data-cap-api-endpoint="{}" required></cap-widget>',
             static('frontend/js/cap_wasm_bg.wasm'),
             static('frontend/js/hashwx.wasm'),
             static('frontend/js/cap.min.js'),
