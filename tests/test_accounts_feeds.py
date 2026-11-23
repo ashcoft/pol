@@ -305,6 +305,150 @@ def test_delete_requires_post(cleanup):
         '/en/myfeeds/delete/%s' % feed.id).status_code == 405
 
 
+def test_edit_feed_page_has_selector_button(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.get('/en/setup/%s' % feed.id)
+    assert response.status_code == 200
+    assert ('/en/setup?feed_id=%s' % feed.id).encode() in response.content
+    assert b'Edit with selector' in response.content
+
+
+def test_setup_with_feed_id_preloads_selectors(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+
+    response = client.get('/en/setup', {'feed_id': feed.id})
+    assert response.status_code == 200
+    html = response.content.decode('utf-8')
+    assert 'id="setup-initial"' in html
+    assert '//article' in html
+    assert 'data-feed-id="%s"' % feed.id in html
+
+
+def test_setup_with_feed_id_denies_other_user(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    other = User.objects.create_user('test_other', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(other)
+
+    assert client.get('/en/setup', {'feed_id': feed.id}).status_code == 403
+
+
+def _snapshot(tmp_path, name):
+    html = ('<html><body><article><h2>Post</h2>'
+            '<a href="/post">link</a><p>Desc</p></article></body></html>')
+    (tmp_path / name).write_text('header\n\n' + html, encoding='utf-8')
+
+
+def test_selector_tool_updates_existing_feed(cleanup, tmp_path, monkeypatch):
+    import frontend.frontend.setup_tool_ext as ext
+
+    monkeypatch.setattr(ext, 'SNAPSHOT_DIR', str(tmp_path))
+    name = '1234567890.123_' + 'a' * 32
+    _snapshot(tmp_path, name)
+
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    other = User.objects.create_user('test_other', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+    feed.xpath = '//old'
+    feed.save()
+
+    selectors = ['//article', {
+        'title': './/h2',
+        'description': './/p',
+        'link': './/a/@href',
+    }]
+    payload = {
+        'selectors': selectors,
+        'snapshot_time': name,
+        'url': TEST_URI + 'selector-updated',
+        'feed_id': feed.id,
+    }
+
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/setup_create_feed_ext', data=json.dumps(payload),
+        content_type='application/json')
+    assert response.status_code == 200
+    assert json.loads(response.content)['success'] is True
+
+    feed.refresh_from_db()
+    assert feed.uri == TEST_URI + 'selector-updated'
+    assert feed.xpath == '//article'
+    assert feed.edited is True
+    assert FeedField.objects.get(
+        feed=feed, field__name='title').xpath == './/h2'
+    assert FeedField.objects.get(
+        feed=feed, field__name='link').xpath == './/a/@href'
+    assert not FeedField.objects.filter(
+        feed=feed, field__name='image').exists()
+
+    other_client = Client()
+    other_client.force_login(other)
+    response = other_client.post(
+        '/setup_create_feed_ext', data=json.dumps(payload),
+        content_type='application/json')
+    assert response.status_code == 403
+
+
+def test_clicker_tool_updates_existing_feed(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    other = User.objects.create_user('test_other', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+    feed.xpath = '//old'
+    feed.save()
+
+    html = [
+        'html', {'tag-id': 1}, [
+            ['body', {'tag-id': 2}, [
+                ['article', {'tag-id': 3}, [
+                    ['h1', {'tag-id': 4}, []],
+                    ['p', {'tag-id': 5}, []],
+                ]],
+            ]],
+        ],
+    ]
+    payload = {
+        'html': html,
+        'names': {'title': 4, 'description': 5},
+        'url': TEST_URI + 'clicker-updated',
+        'feed_id': feed.id,
+    }
+
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/setup_create_feed', data=json.dumps(payload),
+        content_type='application/json')
+    assert response.status_code == 200
+
+    feed.refresh_from_db()
+    assert feed.uri == TEST_URI + 'clicker-updated'
+    assert feed.xpath != '//old'
+    assert FeedField.objects.get(
+        feed=feed, field__name='title').xpath
+    assert FeedField.objects.get(
+        feed=feed, field__name='description').xpath
+
+    other_client = Client()
+    other_client.force_login(other)
+    response = other_client.post(
+        '/setup_create_feed', data=json.dumps(payload),
+        content_type='application/json')
+    assert response.status_code == 403
+
+
 def test_login_rejects_external_next_redirect(cleanup):
     User.objects.create_user('test_owner', password=PASSWORD)
     client = Client()

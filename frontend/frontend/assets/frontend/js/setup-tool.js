@@ -305,8 +305,8 @@ function requestSelection() {
                 success: function(data){
                     resolve(data)
                 },
-                failure: function(errMsg) {
-                    reject(errMsg);
+                error: function(xhr) {
+                    reject(xhr.responseText || xhr.statusText);
                 }
             });
         });
@@ -413,6 +413,10 @@ function onCreateButtonClick() {
         loader(true);
         createFeed().then(function(data){
             if (ET.active()) {
+                if (typeof data !== 'string') {
+                    loader(false);
+                    return;
+                }
                 var res = JSON.parse(data);
                 if (res.success)
                     window.location.href = res.url; // feed_page_url
@@ -422,8 +426,10 @@ function onCreateButtonClick() {
                     loader(false);
                 }
             }
-			else
-				window.location.href = data; // feed_page_url
+            else if (typeof data === 'string' && data)
+                window.location.href = data; // feed_page_url
+            else
+                loader(false);
         }, function(error){
             console.log('Server error: '+ error);
             //unfreez UI
@@ -436,6 +442,7 @@ function createFeed() {
     var selectors = null;
     if (ET.active()) {
         selectors = ET.getUIConfig();
+        selected_any = Boolean(selectors[0].trim() && Object.keys(selectors[1]).length);
     }
     else {
         // gather selected tag-ids
@@ -449,16 +456,16 @@ function createFeed() {
                 type: 'POST',
                 url: ET.active() ? "/setup_create_feed_ext" :"/setup_create_feed",
                 data: JSON.stringify(ET.active()
-                                     ? { selectors: selectors, snapshot_time: snapshot_time, url:$('#create').data('page-url') }
-                                     : { html: iframeHtmlJson, names: name_ids, url:$('#create').data('page-url') }
+                                     ? { selectors: selectors, snapshot_time: snapshot_time, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
+                                     : { html: iframeHtmlJson, names: name_ids, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
                                     ),
                 contentType: "application/json; charset=utf-8",
                 headers: {"X-CSRFToken": getCookie('csrftoken')},
                 success: function(data){
                     resolve(data)
                 },
-                failure: function(errMsg) {
-                    reject(errMsg);
+                error: function(xhr) {
+                    reject(xhr.responseText || xhr.statusText);
                 }
             });
         });

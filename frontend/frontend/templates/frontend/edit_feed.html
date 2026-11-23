@@ -49,6 +49,7 @@
 
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">{% trans "Save changes" %}</button>
+    <a href="{% url 'setup' %}?feed_id={{ feed.id }}" class="btn btn-info">{% trans "Edit with selector" %}</a>
     <a href="{% url 'preview' feed.id %}" class="btn">{% trans "Cancel" %}</a>
     <a href="{% url 'myfeeds' %}" class="btn btn-link">{% trans "Back to my feeds" %}</a>
   </div>

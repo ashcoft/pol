@@ -112,28 +112,56 @@ def contact(request):
 
 @ensure_csrf_cookie
 def setup(request):
-    if request.method == 'GET' and 'url' in request.GET:
+    if request.method != 'GET':
+        return HttpResponseBadRequest('Only GET method supported')
+
+    feed = None
+    feed_id = request.GET.get('feed_id')
+    if feed_id:
+        if not str(feed_id).isdigit():
+            return HttpResponseBadRequest('Invalid feed id')
+        feed = get_object_or_404(Feed, pk=feed_id)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return _deny_feed_access(request)
+        raw_url = feed.uri
+    else:
+        raw_url = request.GET.get('url', '')
+
+    if not raw_url:
+        return HttpResponseBadRequest('Url is required')
+
+    try:
+        url = _normalize_discovery_url(raw_url)
+    except ValueError:
+        return HttpResponseBadRequest('Invalid url')
+
+    if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
+        from pol.reader.errors import InvalidURLError
+        from pol.reader.safety import assert_public_url
         try:
-            url = _normalize_discovery_url(request.GET.get('url', ''))
-        except ValueError:
-            return HttpResponseBadRequest('Invalid url')
+            assert_public_url(url)
+        except InvalidURLError:
+            return HttpResponseBadRequest('This URL is not allowed.')
 
-        if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
-            from pol.reader.errors import InvalidURLError
-            from pol.reader.safety import assert_public_url
-            try:
-                assert_public_url(url)
-            except InvalidURLError:
-                return HttpResponseBadRequest('This URL is not allowed.')
+    setup_initial = None
+    if feed:
+        item_xpathes = {
+            feed_field.field.name: feed_field.xpath
+            for feed_field in feed.feedfield_set.select_related('field')
+        }
+        setup_initial = {
+            'feed_id': feed.id,
+            'selectors': [feed.xpath, item_xpathes],
+        }
 
-        external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(url, safe='')
-        return render(request, 'frontend/setup.html',
-                        {
-                            'external_page_url': external_page_url,
-                            'page_url': url
-                        })
-
-    return HttpResponseBadRequest('Url is required')
+    external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(url, safe='')
+    return render(request, 'frontend/setup.html',
+                    {
+                        'external_page_url': external_page_url,
+                        'page_url': url,
+                        'feed_id': feed.id if feed else None,
+                        'setup_initial': setup_initial,
+                    })
 
 def _validate_html(html):
 
@@ -212,7 +240,7 @@ def _get_date_xpath(date_xpath):
             ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
-def _create_feed(request, url, xpathes, edited=False):
+def _save_feed_fields(feed, xpathes, edited):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
 
@@ -221,25 +249,68 @@ def _create_feed(request, url, xpathes, edited=False):
     by_name = {by_id[field_id].name: value
                for field_id, value in item_xpathes.items() if field_id in by_id}
 
+    feed.xpath = feed_xpath
+    feed.edited = edited
+    feed.save()
+
+    for field in fields:
+        if field.name == 'link' and 'title' in by_name and not edited:
+            xpath = _get_link_xpath(by_name['title'][0])
+        elif field.name == 'image' and 'image' in by_name and not edited:
+            xpath = _get_image_xpath(by_name['image'][0])
+        elif field.name == 'date' and 'date' in by_name and not edited:
+            xpath = _get_date_xpath(by_name['date'][0])
+        elif field.id in item_xpathes:
+            xpath = item_xpathes[field.id][0]
+        else:
+            xpath = ''
+
+        existing = FeedField.objects.filter(feed=feed, field=field).first()
+        if xpath:
+            if existing:
+                existing.xpath = xpath
+                existing.save(update_fields=['xpath'])
+            else:
+                FeedField.objects.create(feed=feed, field=field, xpath=xpath)
+        elif existing:
+            existing.delete()
+
+
+def _create_feed(request, url, xpathes, edited=False):
     with transaction.atomic():
-        feed = Feed(uri=url, xpath=feed_xpath, edited=edited,
+        feed = Feed(uri=url, xpath=xpathes[0], edited=edited,
                     **_feed_owner_kwargs(request))
         feed.save()
-
-        for field in fields:
-            if field.name == 'link' and 'title' in by_name and not edited:
-                xpath = _get_link_xpath(by_name['title'][0])
-            elif field.name == 'image' and 'image' in by_name and not edited:
-                xpath = _get_image_xpath(by_name['image'][0])
-            elif field.name == 'date' and 'date' in by_name and not edited:
-                xpath = _get_date_xpath(by_name['date'][0])
-            elif field.id in item_xpathes:
-                xpath = item_xpathes[field.id][0]
-            else:
-                continue
-            FeedField(feed=feed, field=field, xpath=xpath).save()
+        _save_feed_fields(feed, xpathes, edited)
 
     return feed.id
+
+
+def _update_feed(request, feed, url, xpathes, edited=True):
+    with transaction.atomic():
+        feed = get_object_or_404(
+            Feed.objects.select_for_update(), pk=feed.pk)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return None
+
+        if request.user.is_authenticated and feed.owner_id is None:
+            feed.owner = request.user
+            feed.session_key = ''
+        feed.uri = url
+        feed.save()
+        _save_feed_fields(feed, xpathes, edited)
+
+    return feed.id
+
+
+def _feed_for_update(payload):
+    feed_id = payload.get('feed_id')
+    if not feed_id:
+        return None
+    if not str(feed_id).isdigit():
+        raise ValueError('Invalid feed id')
+    return get_object_or_404(Feed, pk=feed_id)
+
 
 def setup_create_feed(request):
     if request.method == 'POST':
@@ -263,7 +334,20 @@ def setup_create_feed(request):
             field_xpathes[field.id] = [xpathes[1][field.name], required]
         xpathes[1] = field_xpathes
 
-        feed_id = _create_feed(request, url, xpathes)
+        if not xpathes[0].strip() or not field_xpathes:
+            return HttpResponseBadRequest('Select at least one field.')
+
+        try:
+            feed = _feed_for_update(obj)
+        except ValueError:
+            return HttpResponseBadRequest('Invalid feed id')
+
+        if feed:
+            feed_id = _update_feed(request, feed, url, xpathes, edited=False)
+            if feed_id is None:
+                return _deny_feed_access(request)
+        else:
+            feed_id = _create_feed(request, url, xpathes)
 
         return HttpResponse(reverse('preview', args=(feed_id,)))
 
@@ -296,6 +380,10 @@ def _validate_selectors(selectors):
         if not isinstance(xpath, str):
             return False
         item_xpathes_out[field.id] = [xpath, field.required]
+
+    if not feed_xpath.strip() or not item_xpathes_out:
+        return False
+
     return [feed_xpath, item_xpathes_out]
 
 
@@ -357,7 +445,17 @@ def setup_create_feed_ext(request):
 
         if success:
             url = obj['url']
-            feed_id = _create_feed(request, url, validated_selectors, True)
+            try:
+                feed = _feed_for_update(obj)
+            except ValueError:
+                return HttpResponseBadRequest('Invalid feed id')
+
+            if feed:
+                feed_id = _update_feed(request, feed, url, validated_selectors, True)
+                if feed_id is None:
+                    return _deny_feed_access(request)
+            else:
+                feed_id = _create_feed(request, url, validated_selectors, True)
             return HttpResponse(json.dumps({'success': True, 'url': reverse('preview', args=(feed_id,))}))
         else:
             return HttpResponse(json.dumps({'success': False, 'messages': messages}))

@@ -201,8 +201,8 @@ function validateSelectors() {
                 success: function(data){
                     resolve(data)
                 },
-                failure: function(errMsg) {
-                    reject(errMsg);
+                error: function(xhr) {
+                    reject(xhr.responseText || xhr.statusText);
                 }
             });
         });
@@ -260,6 +260,13 @@ $(document).ready(function(){
         save('xpathes', getUIConfig());
         return true;
     });*/
+
+    if (window.SETUP_INITIAL && window.SETUP_INITIAL.feed_id) {
+        updateUI(window.SETUP_INITIAL.selectors);
+        show_ext(true);
+        hide_check_show_create(true);
+        $('#create').removeClass('disabled');
+    }
 
 });
 
