@@ -312,6 +312,9 @@
             var widget = document.querySelector('altcha-widget');
             if (widget && typeof widget.reset === 'function') {
                 widget.reset();
+                if (typeof widget.verify === 'function') {
+                    widget.verify();
+                }
             }
         }
 
