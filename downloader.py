@@ -8,6 +8,8 @@ from settings import DATABASES, SNAPSHOT_DIR, DOWNLOADER_USER_AGENT, DEBUG
 
 port = sys.argv[1] if len(sys.argv) >= 2 else 1234
 
+allow_private = bool(getattr(pol_settings, 'READER_ALLOW_PRIVATE', False))
+
 reader = ReaderEndpoints(
     DOWNLOADER_USER_AGENT,
     cache_backend=getattr(pol_settings, 'CACHE_BACKEND', 'memory'),
@@ -17,8 +19,8 @@ reader = ReaderEndpoints(
     timeout=getattr(pol_settings, 'READER_TIMEOUT', 20),
     max_size=getattr(pol_settings, 'READER_MAX_SIZE', 8 * 1024 * 1024),
     verify_ssl=getattr(pol_settings, 'READER_VERIFY_SSL', True),
-    allow_private=True if getattr(pol_settings, 'READER_ALLOW_PRIVATE', False) else None,
+    allow_private=True if allow_private else None,
 )
 
 Server(port, DATABASES['default'], SNAPSHOT_DIR, DOWNLOADER_USER_AGENT,
-       reader=reader).run()
+       reader=reader, allow_private=allow_private).run()

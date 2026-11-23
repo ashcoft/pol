@@ -2,7 +2,7 @@
 
 import pytest
 
-from pol.server import _http_url
+from pol.server import Site, _http_url
 
 
 @pytest.mark.parametrize('value', [
@@ -27,3 +27,13 @@ def test_http_url_accepts_absolute_http_urls(value):
 ])
 def test_http_url_rejects_unsupported_values(value):
     assert _http_url(value) is None
+
+
+def test_site_blocks_private_urls_unless_allowed():
+    site = object.__new__(Site)
+    site.allow_private = False
+    assert site._url_allowed('http://127.0.0.1/') is False
+    assert site._url_allowed('http://localhost/') is False
+
+    site.allow_private = True
+    assert site._url_allowed('http://127.0.0.1/') is True

@@ -32,6 +32,8 @@ from scrapy.selector import Selector
 from pol.log import LogHandler
 from .feed import Feed
 from .client import ppReadBody, IGNORE_SIZE
+from .reader.errors import InvalidURLError
+from .reader.safety import assert_public_url
 from .reader.web import ReaderEndpoints
 
 from twisted.logger import Logger
@@ -440,7 +442,7 @@ class Site(resource.Resource):
     feed_regexp = re.compile(rb'^/feed/(\d{1,10})')
 
 
-    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
+    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None, allow_private=False):
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
         self.user_agent = user_agent
@@ -454,6 +456,16 @@ class Site(resource.Resource):
         self.memon= memon
         self.max_size = max_size
         self.downloadercls = downloadercls or Downloader
+        self.allow_private = allow_private
+
+    def _url_allowed(self, url):
+        if self.allow_private:
+            return True
+        try:
+            assert_public_url(url)
+        except InvalidURLError:
+            return False
+        return True
 
     def startRequest(self, request, url, feed_config = None, selector_defer=None, sanitize=False):
         if isinstance(url, bytes):
@@ -538,6 +550,9 @@ class Site(resource.Resource):
             if not url:
                 request.setResponseCode(400)
                 return b'Url is invalid'
+            if not self._url_allowed(url):
+                request.setResponseCode(400)
+                return b'This URL is not allowed.'
 
             self.startRequest(request, url, sanitize=True)
             return NOT_DONE_YET
@@ -562,6 +577,9 @@ class Site(resource.Resource):
                 if not url:
                     request.setResponseCode(400)
                     return b'Feed URL is invalid'
+                if not self._url_allowed(url):
+                    request.setResponseCode(400)
+                    return b'This URL is not allowed.'
                 self.startRequest(request, url, feed_config, sanitize=sanitize)
                 return NOT_DONE_YET
         else: # neither page and feed
@@ -581,7 +599,7 @@ class Site(resource.Resource):
 
 class Server(object):
 
-    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
+    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None, allow_private=False):
         self.port = port
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
@@ -597,7 +615,7 @@ class Server(object):
         if not sitecls:
             sitecls = Site
 
-        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size, reader=reader)
+        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size, reader=reader, allow_private=allow_private)
 
     def requestSelector(self, url=None, feed_config=None):
         d = defer.Deferred()
