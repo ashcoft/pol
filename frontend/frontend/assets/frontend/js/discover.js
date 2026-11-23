@@ -368,6 +368,7 @@
                 setStatus('Enter a page URL first.');
                 return;
             }
+            $input.val(url);
             if (running) {
                 return;
             }
