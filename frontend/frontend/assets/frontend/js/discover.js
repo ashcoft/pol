@@ -345,7 +345,7 @@
                     document.createTextNode(' ' + message)
                 );
             } else {
-                setStatus(message);
+                $status.text(message);
             }
         }
 
@@ -383,7 +383,6 @@
             setStatus('Looking for feeds…', true);
             showSkeletons();
             $results.attr('aria-busy', 'true');
-            $results.empty();
 
             $.ajax({
                 url: '/discover',
