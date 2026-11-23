@@ -17,11 +17,15 @@
 
   {% for field in form %}
     <div class="control-group{% if field.errors %} error{% endif %}">
-      <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% if field.name == 'captcha' %}
+        <span class="control-label">{{ field.label }}</span>
+      {% else %}
+        <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% endif %}
       <div class="controls">
         {{ field }}
         {% if field.name == 'captcha' %}
-          <span class="help-block">{% trans "Type the characters shown in the image." %} <button type="button" class="btn btn-link captcha-refresh" data-captcha-refresh-url="{% url 'captcha-refresh' %}">{% trans "New code" %}</button></span>
+          <span class="help-block">{% trans "Complete the verification below." %}</span>
         {% endif %}
         {% if field.errors %}<span class="help-inline">{{ field.errors|striptags }}</span>{% endif %}
       </div>

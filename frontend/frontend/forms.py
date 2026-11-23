@@ -3,12 +3,13 @@ from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
-from captcha.fields import CaptchaField, CaptchaTextInput
 from lxml import etree
 
+from .altcha import AltchaField
 
-CAPTCHA_LABEL = _('Verification code')
-CAPTCHA_ERROR = _('Incorrect verification code. Please try again.')
+
+CAPTCHA_LABEL = _('Verification')
+CAPTCHA_ERROR = _('Verification failed. Please try again.')
 
 
 def _validate_xpath(value):
@@ -23,22 +24,21 @@ def _validate_xpath(value):
 
 class IndexForm(forms.Form):
     url = forms.CharField(max_length=2000, widget=forms.TextInput(attrs={'class': 'input-xxlarge', 'placeholder': 'http://'}))
-    captcha = CaptchaField(
+    captcha = AltchaField(
         label=CAPTCHA_LABEL,
         error_messages={'invalid': CAPTCHA_ERROR},
-        widget=CaptchaTextInput(attrs={'class': 'input-xlarge'}),
     )
 
 
 class LoginForm(AuthenticationForm):
-    captcha = CaptchaField(
+    captcha = AltchaField(
         label=CAPTCHA_LABEL,
         error_messages={'invalid': CAPTCHA_ERROR},
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for name in ('username', 'password', 'captcha'):
+        for name in ('username', 'password'):
             self.fields[name].widget.attrs.update({'class': 'input-xlarge'})
 
     def clean(self):

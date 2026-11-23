@@ -11,7 +11,7 @@ from django.db.models import Count
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import (
     HttpResponseRedirect, HttpResponse, HttpResponseBadRequest,
-    HttpResponseNotAllowed)
+    HttpResponseNotAllowed, JsonResponse)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.core.validators import URLValidator
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -613,6 +613,13 @@ def logout_view(request):
         return HttpResponseNotAllowed(['POST'])
     auth_logout(request)
     return redirect('index')
+
+
+def altcha_challenge(request):
+    from .altcha import create_challenge
+    if request.method != 'GET':
+        return HttpResponseNotAllowed(['GET'])
+    return JsonResponse(create_challenge().to_dict())
 
 
 def _json_error(message, status=400, captcha=False):

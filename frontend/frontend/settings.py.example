@@ -58,7 +58,6 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
     'django.contrib.sites',
     'pipeline',
-    'captcha',
     'frontend',
 )
 
@@ -189,7 +188,6 @@ PIPELINE = {
               'frontend/js/google-code-prettify/prettify.js',
               'frontend/js/setup-tool.js',
               'frontend/js/setup-tool-ext.js',
-              'frontend/js/captcha.js',
               'frontend/js/discover.js',
               'frontend/js/help.js',
             ),
@@ -223,11 +221,10 @@ READER_VERIFY_SSL = os.environ.get('POL_READER_VERIFY_SSL', '1').lower() not in 
 READER_ALLOW_PRIVATE = os.environ.get('POL_READER_ALLOW_PRIVATE', '0').lower() in ('1', 'true', 'yes', 'on')
 DOWNLOADER_BASE_URL = os.environ.get('DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
 
-# Captcha for the RSS check and login (django-simple-captcha).
-CAPTCHA_LENGTH = int(os.environ.get('CAPTCHA_LENGTH', '5'))
-CAPTCHA_TIMEOUT = int(os.environ.get('CAPTCHA_TIMEOUT', '5'))
-CAPTCHA_IMAGE_SIZE = (170, 55)
-CAPTCHA_FONT_SIZE = 28
-CAPTCHA_LETTER_ROTATION = (-30, 30)
-# Test-only switch: any answer "passed" is accepted. Never enable in production.
-CAPTCHA_TEST_MODE = os.environ.get('CAPTCHA_TEST_MODE', '0').lower() in ('1', 'true', 'yes', 'on')
+# Altcha proof-of-work captcha (self-hosted; no external service).
+ALTCHA_HMAC_KEY = os.environ.get('ALTCHA_HMAC_KEY', SECRET_KEY)
+ALTCHA_ALGORITHM = os.environ.get('ALTCHA_ALGORITHM', 'PBKDF2/SHA-256')
+ALTCHA_COST = int(os.environ.get('ALTCHA_COST', '10000'))
+ALTCHA_TIMEOUT = int(os.environ.get('ALTCHA_TIMEOUT', '1200'))
+# Test-only switch: any non-empty payload is accepted. Never enable in production.
+ALTCHA_TEST_MODE = os.environ.get('ALTCHA_TEST_MODE', '0').lower() in ('1', 'true', 'yes', 'on')

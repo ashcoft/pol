@@ -13,7 +13,7 @@ Including another URLconf
     1. Add an import:  from blog import urls as blog_urls
     2. Add a URL to urlpatterns:  url(r'^blog/', include(blog_urls))
 """
-from django.urls import include, re_path as url
+from django.urls import re_path as url
 from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
 
@@ -40,4 +40,4 @@ urlpatterns.append(url(r'^setup_create_feed_ext$', views.setup_create_feed_ext, 
 urlpatterns.append(url(r'^setup_validate_selectors$', views.setup_validate_selectors, name='setup_validate_selectors'))
 urlpatterns.append(url(r'^discover$', views.discover, name='discover'))
 urlpatterns.append(url(r'^api/find-feeds$', views.discover, name='find_feeds'))
-urlpatterns.append(url(r'^captcha/', include('captcha.urls')))
+urlpatterns.append(url(r'^altcha/challenge$', views.altcha_challenge, name='altcha_challenge'))

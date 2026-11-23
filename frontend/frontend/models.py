@@ -29,3 +29,14 @@ class Post(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=['feed', 'md5sum'], name='md5sum_index')]
+
+
+class AltchaUsedChallenge(models.Model):
+    """Signed Altcha challenges that have already been solved.
+
+    The unique signature makes replay protection work across all Gunicorn
+    workers without relying on a shared cache.
+    """
+    signature = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+    created = models.DateTimeField(auto_now_add=True)

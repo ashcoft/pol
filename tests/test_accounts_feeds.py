@@ -512,7 +512,7 @@ def test_login_requires_captcha(cleanup):
         'password': PASSWORD,
     })
     assert response.status_code == 200
-    assert b'Verification code' in response.content
+    assert b'Verification' in response.content
     assert client.session.get('_auth_user_id') is None
 
 
@@ -521,10 +521,10 @@ def test_login_rejects_wrong_captcha(cleanup):
     client = Client()
     data = {'username': 'test_owner', 'password': PASSWORD}
     data.update(captcha_data())
-    data['captcha_1'] = 'wrong-answer'
+    data['captcha'] = 'wrong-answer'
     response = client.post('/en/accounts/login/', data)
     assert response.status_code == 200
-    assert b'Incorrect verification code' in response.content
+    assert b'Verification failed' in response.content
     assert client.session.get('_auth_user_id') is None
 
 
@@ -534,9 +534,9 @@ def test_login_does_not_check_password_until_captcha_passes(cleanup):
 
     data = {'username': 'test_owner', 'password': 'wrong-password'}
     data.update(captcha_data())
-    data['captcha_1'] = 'wrong-answer'
+    data['captcha'] = 'wrong-answer'
     response = client.post('/en/accounts/login/', data)
-    assert b'Incorrect verification code' in response.content
+    assert b'Verification failed' in response.content
     assert b'correct username and password' not in response.content
 
     data = {'username': 'test_owner', 'password': 'wrong-password'}
@@ -548,6 +548,5 @@ def test_login_does_not_check_password_until_captcha_passes(cleanup):
 def test_login_page_renders_captcha(cleanup):
     response = Client().get('/en/accounts/login/')
     assert response.status_code == 200
-    assert b'name="captcha_0"' in response.content
-    assert b'name="captcha_1"' in response.content
-    assert b'/captcha/image/' in response.content
+    assert b'altcha-widget' in response.content
+    assert b'challengeurl="/altcha/challenge"' in response.content

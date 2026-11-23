@@ -64,8 +64,8 @@ existing feeds:
 
 The index page accepts `?q=<page url>` (for example
 `/?q=https://www.cyclingnews.com`) to prefill the search box. Discovery is
-captcha-protected, so the user enters the code shown in the image and then
-presses **Find RSS**. Each result
+protected by a self-hosted Altcha proof-of-work challenge, so the user
+completes the verification widget and then presses **Find RSS**. Each result
 has a **Preview** action that opens a slide-in pane with the latest feed items,
 plus **Copy** and **Open** actions, mirroring the rss-finder interface.
 
@@ -83,12 +83,14 @@ each path accordingly (see `nginx/default.site-example`):
 | `GET /read?url=<feed>&callback=cb` | JSONP output. |
 | `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). Captcha required. |
 | `GET /api/find-feeds?url=<page>` | Alias of `/discover`. Captcha required. |
-| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus the captcha fields. |
+| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus a solved Altcha `captcha` field. |
 | `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
 
-The discovery endpoints require `captcha_0` (the challenge key) and `captcha_1`
-(the answer). Load the index page to get a fresh key and its image at
-`/captcha/image/<key>/`, solve it, then send both fields with the URL.
+The discovery endpoints require a solved Altcha `captcha` payload. Load the
+index page, complete the Altcha widget, then send its hidden `captcha` field
+with the URL. Altcha is self-hosted and needs no external service or API keys;
+tune it with `ALTCHA_HMAC_KEY` (defaults to `SECRET_KEY`), `ALTCHA_ALGORITHM`,
+`ALTCHA_COST`, and `ALTCHA_TIMEOUT`.
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
@@ -107,8 +109,8 @@ curl 'http://localhost/read?url=https://example.com/feed.xml'
 curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltext=1'
 ```
 
-Feed discovery needs the captcha fields described above, so use the web
-interface or submit them explicitly.
+Feed discovery needs a solved Altcha payload, so use the web interface or
+submit the widget's `captcha` field explicitly.
 
 ## Command line
 
@@ -425,8 +427,7 @@ docker compose -f docker-compose.prod.yml up -d
 # database backup
 docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
 
-# delete expired captcha challenges (run from cron, for example hourly)
-docker compose exec -T politepol python frontend/manage.py captcha_clean
+# Altcha used-challenge rows are cleaned automatically during verification.
 
 # image backup (for hosts that cannot pull from GHCR)
 POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)

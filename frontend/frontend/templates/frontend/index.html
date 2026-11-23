@@ -30,20 +30,6 @@
     align-items: center;
     gap: 10px;
 }
-.rss-captcha-controls img.captcha {
-    display: block;
-    border-radius: 4px;
-}
-.rss-captcha-refresh {
-    background: none;
-    border: 0;
-    color: #2f7ed8;
-    cursor: pointer;
-    padding: 0;
-    font-size: 13px;
-    text-decoration: underline;
-    white-space: nowrap;
-}
 </style>
 <div class="welcom rss-finder-home" style="position: relative">
     <div id="help" style="position: absolute; z-index: 2; right:0; top: 0; width: 60px;">
@@ -79,14 +65,13 @@
                 <input type="submit" id="go-btn" value="{% trans 'Find RSS' %}" class="rss-search-button" />
             </div>
             <div class="rss-captcha">
-                <label class="rss-captcha-label" for="{{ form.captcha.id_for_label }}">{% trans "Verification code" %}</label>
+                <span class="rss-captcha-label">{% trans "Verification" %}</span>
                 <div class="rss-captcha-controls">
                     {{ form.captcha }}
-                    <button type="button" class="rss-captcha-refresh captcha-refresh" data-captcha-refresh-url="{% url 'captcha-refresh' %}">{% trans "New code" %}</button>
                 </div>
             </div>
         </form>
-        <p class="rss-search-help">{% trans "Enter any website URL. If it publishes RSS, we'll list the feeds; otherwise we'll open the feed builder." %}</p>
+        <p class="rss-search-help">{% trans "Complete the verification, then enter a website URL. If it publishes RSS, we'll list the feeds; otherwise we'll open the feed builder." %}</p>
 
         <div id="feed-finder-status" class="rss-finder-status" role="status" aria-live="polite"></div>
         <ul id="feed-finder-results" class="rss-finder-results" aria-live="polite"></ul>

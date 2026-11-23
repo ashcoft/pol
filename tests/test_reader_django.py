@@ -103,7 +103,7 @@ def test_discover_rejects_wrong_captcha(http_server, monkeypatch):
 
     data = {'url': 'https://example.com/'}
     data.update(captcha_data())
-    data['captcha_1'] = 'wrong-answer'
+    data['captcha'] = 'wrong-answer'
     response = Client().get('/discover', data)
     assert response.status_code == 400
     assert json.loads(response.content)['captcha'] is True
@@ -165,21 +165,21 @@ def test_discover_rejects_non_string_url():
 
 
 @override_settings(**TEST_SETTINGS)
-def test_index_renders_captcha():
+def test_index_renders_altcha_widget():
     response = Client().get('/en/')
     assert response.status_code == 200
     html = response.content.decode('utf-8')
-    assert 'name="captcha_0"' in html
-    assert 'name="captcha_1"' in html
-    assert '/captcha/image/' in html
+    assert 'altcha-widget' in html
+    assert 'challengeurl="/altcha/challenge"' in html
 
 
 @override_settings(**TEST_SETTINGS)
-def test_captcha_image_is_served():
-    key = captcha_data()['captcha_0']
-    response = Client().get('/captcha/image/%s/' % key)
+def test_altcha_challenge_endpoint():
+    response = Client().get('/altcha/challenge')
     assert response.status_code == 200
-    assert response['Content-Type'] == 'image/png'
+    payload = json.loads(response.content)
+    assert 'parameters' in payload
+    assert 'signature' in payload
 
 
 @override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)

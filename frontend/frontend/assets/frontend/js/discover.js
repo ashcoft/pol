@@ -304,20 +304,22 @@
             });
         }
 
-        function captchaData() {
-            return {
-                captcha_0: $('input[name="captcha_0"]').val() || '',
-                captcha_1: $('input[name="captcha_1"]').val() || ''
-            };
+        function captchaValue() {
+            return $('input[name="captcha"]').val() || '';
         }
 
-        function refreshCaptcha() {
-            var url = $('.captcha-refresh').data('captcha-refresh-url') || '/captcha/refresh/';
-            $.getJSON(url, function (data) {
-                $('img.captcha').attr('src', data.image_url);
-                $('input[name="captcha_0"]').val(data.key);
-                $('input[name="captcha_1"]').val('');
-            });
+        function resetCaptcha() {
+            var widget = document.querySelector('altcha-widget');
+            if (widget && typeof widget.reset === 'function') {
+                widget.reset();
+            }
+        }
+
+        function focusCaptcha() {
+            var widget = document.querySelector('altcha-widget');
+            if (widget && widget.scrollIntoView) {
+                widget.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
         }
 
         function runDiscovery(url, scrollToResults) {
@@ -329,10 +331,10 @@
             if (running) {
                 return;
             }
-            var captcha = captchaData();
-            if (!captcha.captcha_1) {
-                $status.text('Enter the verification code first.');
-                $('input[name="captcha_1"]').trigger('focus');
+            var captcha = captchaValue();
+            if (!captcha) {
+                $status.text('Complete the verification first.');
+                focusCaptcha();
                 return;
             }
 
@@ -346,8 +348,7 @@
                 method: 'POST',
                 data: {
                     url: url,
-                    captcha_0: captcha.captcha_0,
-                    captcha_1: captcha.captcha_1,
+                    captcha: captcha,
                     csrfmiddlewaretoken: $('input[name="csrfmiddlewaretoken"]').val()
                 },
                 dataType: 'json'
@@ -379,7 +380,7 @@
                 if (xhr.status === 400) {
                     $status.text(message);
                     if (captchaFailed) {
-                        $('input[name="captcha_1"]').trigger('focus');
+                        focusCaptcha();
                     }
                     return;
                 }
@@ -388,7 +389,7 @@
             }).always(function () {
                 running = false;
                 $submit.prop('disabled', false);
-                refreshCaptcha();
+                resetCaptcha();
             });
         }
 
@@ -443,8 +444,8 @@
         var query = params.get('q');
         if (query) {
             $input.val(query);
-            $status.text('Enter the verification code, then press Find RSS.');
-            $('input[name="captcha_1"]').trigger('focus');
+            $status.text('Complete the verification, then press Find RSS.');
+            focusCaptcha();
         }
     });
 })(jQuery);
