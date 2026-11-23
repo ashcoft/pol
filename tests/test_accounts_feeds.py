@@ -347,6 +347,83 @@ def test_myfeeds_opml_excludes_other_users_feeds(cleanup):
     assert ('/feed/%s' % feed.id).encode() not in response.content
 
 
+def test_creating_duplicate_feed_opens_existing(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    html = [
+        'html', {'tag-id': 1}, [
+            ['body', {'tag-id': 2}, [
+                ['article', {'tag-id': 3}, [
+                    ['h1', {'tag-id': 4}, []],
+                    ['p', {'tag-id': 5}, []],
+                ]],
+            ]],
+        ],
+    ]
+    payload = {
+        'html': html,
+        'names': {'title': 4, 'description': 5},
+        'url': 'https://EXAMPLE.test/page',
+    }
+
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/setup_create_feed', data=json.dumps(payload),
+        content_type='application/json')
+    assert response.status_code == 200
+    assert response.content.decode().endswith(
+        '/en/preview/%s?duplicate=1' % feed.id)
+    assert Feed.objects.filter(owner=owner).count() == 1
+
+
+def test_edit_rejects_duplicate_uri(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    _make_feed(owner=owner)
+    feed2 = Feed.objects.create(
+        uri=TEST_URI + 'other', xpath='//article', owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/en/setup/%s' % feed2.id,
+        _edit_data(uri='https://EXAMPLE.test/page'))
+    assert response.status_code == 200
+    assert b'You already have a feed for this page.' in response.content
+    feed2.refresh_from_db()
+    assert feed2.uri == TEST_URI + 'other'
+
+
+def test_preview_shows_duplicate_banner(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    client = Client()
+    client.force_login(owner)
+    response = client.get('/en/preview/%s?duplicate=1' % feed.id)
+    assert response.status_code == 200
+    assert b'A feed for this page already exists' in response.content
+
+
+def test_myfeeds_marks_duplicate_uri(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    Feed.objects.filter(uri__icontains='example.test/dupe').delete()
+    try:
+        Feed.objects.create(
+            uri='https://EXAMPLE.test/dupe', xpath='//article', owner=owner)
+        Feed.objects.create(
+            uri='https://example.test/dupe', xpath='//article', owner=owner)
+
+        client = Client()
+        client.force_login(owner)
+        response = client.get('/en/myfeeds')
+        assert response.status_code == 200
+        assert b'Duplicate' in response.content
+    finally:
+        Feed.objects.filter(uri__icontains='example.test/dupe').delete()
+
+
 def test_edit_feed_page_has_selector_button(cleanup):
     owner = User.objects.create_user('test_owner', password=PASSWORD)
     feed = _make_feed(owner=owner)

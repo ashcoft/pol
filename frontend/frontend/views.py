@@ -277,22 +277,44 @@ def _save_feed_fields(feed, xpathes, edited):
             existing.delete()
 
 
+def _find_duplicate_feed(request, url, exclude_id=None):
+    normalized = _normalize_discovery_url(url)
+    feeds = _feeds_for_request(request)
+    if exclude_id is not None:
+        feeds = feeds.exclude(pk=exclude_id)
+    for feed in feeds.only('id', 'uri'):
+        try:
+            if _normalize_discovery_url(feed.uri) == normalized:
+                return feed
+        except ValueError:
+            continue
+    return None
+
+
 def _create_feed(request, url, xpathes, edited=False):
+    duplicate = _find_duplicate_feed(request, url)
+    if duplicate is not None:
+        return duplicate.id, True
+
     with transaction.atomic():
         feed = Feed(uri=url, xpath=xpathes[0], edited=edited,
                     **_feed_owner_kwargs(request))
         feed.save()
         _save_feed_fields(feed, xpathes, edited)
 
-    return feed.id
+    return feed.id, False
 
 
 def _update_feed(request, feed, url, xpathes, edited=True):
+    duplicate = _find_duplicate_feed(request, url, exclude_id=feed.id)
+    if duplicate is not None:
+        return duplicate.id, True
+
     with transaction.atomic():
         feed = get_object_or_404(
             Feed.objects.select_for_update(), pk=feed.pk)
         if not _can_manage(request, feed, allow_legacy_claim=True):
-            return None
+            return None, False
 
         if request.user.is_authenticated and feed.owner_id is None:
             feed.owner = request.user
@@ -301,7 +323,7 @@ def _update_feed(request, feed, url, xpathes, edited=True):
         feed.save()
         _save_feed_fields(feed, xpathes, edited)
 
-    return feed.id
+    return feed.id, False
 
 
 def _feed_for_update(payload):
@@ -343,14 +365,19 @@ def setup_create_feed(request):
         except ValueError:
             return HttpResponseBadRequest('Invalid feed id')
 
+        duplicate = False
         if feed:
-            feed_id = _update_feed(request, feed, url, xpathes, edited=False)
+            feed_id, duplicate = _update_feed(
+                request, feed, url, xpathes, edited=False)
             if feed_id is None:
                 return _deny_feed_access(request)
         else:
-            feed_id = _create_feed(request, url, xpathes)
+            feed_id, duplicate = _create_feed(request, url, xpathes)
 
-        return HttpResponse(reverse('preview', args=(feed_id,)))
+        preview_url = reverse('preview', args=(feed_id,))
+        if duplicate:
+            preview_url += '?duplicate=1'
+        return HttpResponse(preview_url)
 
 def _validate_selectors(selectors):
     if not isinstance(selectors, list) or len(selectors) != 2:
@@ -443,15 +470,21 @@ def setup_create_feed_ext(request):
                 {'success': False, 'messages': messages}))
 
         feed = _feed_for_update(obj)
+        duplicate = False
         if feed:
-            feed_id = _update_feed(request, feed, obj['url'], selectors, True)
+            feed_id, duplicate = _update_feed(
+                request, feed, obj['url'], selectors, True)
             if feed_id is None:
                 raise _SetupDenied()
         else:
-            feed_id = _create_feed(request, obj['url'], selectors, True)
+            feed_id, duplicate = _create_feed(
+                request, obj['url'], selectors, True)
+        preview_url = reverse('preview', args=(feed_id,))
+        if duplicate:
+            preview_url += '?duplicate=1'
         return HttpResponse(json.dumps({
             'success': True,
-            'url': reverse('preview', args=(feed_id,)),
+            'url': preview_url,
         }))
     except _BadRequest as exc:
         return HttpResponseBadRequest(exc.message)
@@ -471,6 +504,7 @@ def preview(request, feed_id):
                   {
                       'feed_url': FEED_PAGE_URL + feed_id,
                       'feed_id': feed_id,
+                      'duplicate': request.GET.get('duplicate'),
                   })
 
 
@@ -484,8 +518,16 @@ def _feeds_for_request(request):
 
 
 def myfeeds(request):
-    feeds = _feeds_for_request(request)
-    feeds = feeds.annotate(field_count=Count('feedfield')).order_by('-created')
+    feeds = list(_feeds_for_request(request).annotate(
+        field_count=Count('feedfield')).order_by('-created'))
+    seen = set()
+    for feed in feeds:
+        try:
+            key = _normalize_discovery_url(feed.uri)
+        except ValueError:
+            key = feed.uri
+        feed.duplicate = key in seen
+        seen.add(key)
     return render(request, 'frontend/myfeeds.html',
                   {'feeds': feeds, 'feed_page_url': FEED_PAGE_URL})
 
@@ -515,34 +557,46 @@ def edit_feed(request, feed_id):
     if request.method == 'POST':
         form = FeedEditForm(request.POST, fields=fields)
         if form.is_valid():
-            with transaction.atomic():
-                # Reload under a row lock so two concurrent claims cannot both
-                # pass the permission check and overwrite each other.
-                feed = get_object_or_404(
-                    Feed.objects.select_for_update(), pk=feed_id)
-                if not _can_manage(request, feed, allow_legacy_claim=True):
-                    return _deny_feed_access(request)
+            if not _can_manage(request, feed, allow_legacy_claim=True):
+                return _deny_feed_access(request)
 
-                if request.user.is_authenticated and feed.owner_id is None:
-                    feed.owner = request.user
-                    feed.session_key = ''
-                feed.uri = form.cleaned_data['uri']
-                feed.xpath = form.cleaned_data['feed_xpath']
-                feed.edited = True
-                feed.save()
+            duplicate = _find_duplicate_feed(
+                request, form.cleaned_data['uri'], exclude_id=feed.id)
+            if duplicate is not None:
+                form.add_error(
+                    'uri', _('You already have a feed for this page.'))
+            else:
+                with transaction.atomic():
+                    # Reload under a row lock so two concurrent claims cannot
+                    # both pass the permission check and overwrite each other.
+                    feed = get_object_or_404(
+                        Feed.objects.select_for_update(), pk=feed_id)
+                    if not _can_manage(request, feed, allow_legacy_claim=True):
+                        return _deny_feed_access(request)
 
-                for field in fields:
-                    xpath = form.cleaned_data.get('xpath_%s' % field.name, '').strip()
-                    existing = FeedField.objects.filter(feed=feed, field=field).first()
-                    if xpath:
-                        if existing:
-                            existing.xpath = xpath
-                            existing.save(update_fields=['xpath'])
-                        else:
-                            FeedField.objects.create(feed=feed, field=field, xpath=xpath)
-                    elif existing:
-                        existing.delete()
-            return redirect('preview', feed.id)
+                    if request.user.is_authenticated and feed.owner_id is None:
+                        feed.owner = request.user
+                        feed.session_key = ''
+                    feed.uri = form.cleaned_data['uri']
+                    feed.xpath = form.cleaned_data['feed_xpath']
+                    feed.edited = True
+                    feed.save()
+
+                    for field in fields:
+                        xpath = form.cleaned_data.get(
+                            'xpath_%s' % field.name, '').strip()
+                        existing = FeedField.objects.filter(
+                            feed=feed, field=field).first()
+                        if xpath:
+                            if existing:
+                                existing.xpath = xpath
+                                existing.save(update_fields=['xpath'])
+                            else:
+                                FeedField.objects.create(
+                                    feed=feed, field=field, xpath=xpath)
+                        elif existing:
+                            existing.delete()
+                return redirect('preview', feed.id)
         if not _can_manage(request, feed, allow_legacy_claim=True):
             return _deny_feed_access(request)
     else:

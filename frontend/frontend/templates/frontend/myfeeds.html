@@ -36,7 +36,10 @@
     {% for feed in feeds %}
     <tr>
       <td>{{ feed.id }}</td>
-      <td><a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a></td>
+      <td>
+        <a href="{{ feed.uri }}" target="_blank" rel="noopener">{{ feed.uri }}</a>
+        {% if feed.duplicate %}<span class="label label-warning">{% trans "Duplicate" %}</span>{% endif %}
+      </td>
       <td><a href="{{ feed_page_url }}{{ feed.id }}" target="_blank" rel="noopener">{{ feed_page_url }}{{ feed.id }}</a></td>
       <td>{{ feed.field_count }}</td>
       <td>{{ feed.created|date:"Y-m-d H:i" }}</td>
