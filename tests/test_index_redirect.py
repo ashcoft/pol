@@ -6,6 +6,8 @@ from urllib.parse import parse_qs, urlsplit
 import django
 from django.test import Client, override_settings
 
+from tests.captcha_utils import captcha_data
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'frontend.frontend.settings')
 django.setup()
 
@@ -15,7 +17,9 @@ TEST_SETTINGS = dict(ROOT_URLCONF='frontend.frontend.urls', ALLOWED_HOSTS=['test
 @override_settings(**TEST_SETTINGS)
 def test_index_redirects_to_local_setup_page():
     source = 'example.com/story?a=1&b=2#frag'
-    response = Client().get('/en/', {'url': source})
+    data = {'url': source}
+    data.update(captcha_data())
+    response = Client().get('/en/', data)
     assert response.status_code == 302
 
     location = response['Location']
@@ -35,7 +39,9 @@ def test_index_redirects_to_local_setup_page():
 
 @override_settings(**TEST_SETTINGS)
 def test_index_rejects_invalid_url_without_redirecting():
-    response = Client().get('/en/', {'url': 'javascript:alert(1)'})
+    data = {'url': 'javascript:alert(1)'}
+    data.update(captcha_data())
+    response = Client().get('/en/', data)
     assert response.status_code == 200
     assert 'Location' not in response
     assert b'Invalid url' in response.content

@@ -481,28 +481,64 @@ def logout_view(request):
     return redirect('index')
 
 
+def _json_error(message, status=400, captcha=False):
+    payload = {'error': message}
+    if captcha:
+        payload['captcha'] = True
+    return HttpResponse(json.dumps(payload), status=status,
+                        content_type='application/json')
+
+
+def _request_payload(request):
+    if request.method != 'POST':
+        return request.GET
+    if 'application/json' in (request.content_type or ''):
+        try:
+            payload = json.loads(request.body or b'{}')
+        except (TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+    return request.POST
+
+
 def discover(request):
-    """Proxy feed discovery to the downloader (used by the index page and dev)."""
-    url = (request.GET.get('url') or '').strip()
-    if not url:
+    """Proxy feed discovery to the downloader after a captcha check."""
+    if request.method not in ('GET', 'POST'):
+        return HttpResponseNotAllowed(['GET', 'POST'])
+
+    payload = _request_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest('Invalid JSON body')
+
+    raw_url = payload.get('url')
+    if not isinstance(raw_url, str) or not raw_url.strip():
         return HttpResponseBadRequest('Url is required')
+    raw_url = raw_url.strip()
     try:
-        url = _normalize_discovery_url(url)
+        url = _normalize_discovery_url(raw_url)
     except ValueError:
         return HttpResponseBadRequest('Invalid url')
 
     if not url.lower().startswith(('http://', 'https://')):
         return HttpResponseBadRequest('Invalid url')
 
+    form_data = payload.copy()
+    form_data['url'] = url
+    form = IndexForm(form_data)
+    if not form.is_valid():
+        if form.errors.get('captcha'):
+            return _json_error(
+                str(form.errors['captcha'][0]), captcha=True)
+        return HttpResponseBadRequest('Invalid url')
+
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:
         with urllib.request.urlopen(target, timeout=35) as response:  # nosec B310
-            payload = response.read()
+            body = response.read()
             status = response.status
     except urllib.error.HTTPError as exc:
         return HttpResponse(exc.read(), status=exc.code,
                             content_type='application/json')
     except Exception:
-        return HttpResponse(json.dumps({'error': 'Feed discovery failed'}),
-                            status=502, content_type='application/json')
-    return HttpResponse(payload, status=status, content_type='application/json')
+        return _json_error('Feed discovery failed', status=502)
+    return HttpResponse(body, status=status, content_type='application/json')

@@ -23,6 +23,7 @@ from django.db import connection  # noqa: E402
 from django.test import Client, override_settings  # noqa: E402
 
 from frontend.frontend.models import Feed, Field, FeedField  # noqa: E402
+from tests.captcha_utils import captcha_data  # noqa: E402
 
 
 def _db_ready():
@@ -307,10 +308,61 @@ def test_delete_requires_post(cleanup):
 def test_login_rejects_external_next_redirect(cleanup):
     User.objects.create_user('test_owner', password=PASSWORD)
     client = Client()
-    response = client.post('/en/accounts/login/?next=https://evil.example/', {
+    data = {
         'username': 'test_owner',
         'password': PASSWORD,
         'next': 'https://evil.example/',
-    })
+    }
+    data.update(captcha_data())
+    response = client.post('/en/accounts/login/?next=https://evil.example/', data)
     assert response.status_code == 302
     assert response['Location'] == '/en/myfeeds'
+
+
+def test_login_requires_captcha(cleanup):
+    User.objects.create_user('test_owner', password=PASSWORD)
+    client = Client()
+    response = client.post('/en/accounts/login/', {
+        'username': 'test_owner',
+        'password': PASSWORD,
+    })
+    assert response.status_code == 200
+    assert b'Verification code' in response.content
+    assert client.session.get('_auth_user_id') is None
+
+
+def test_login_rejects_wrong_captcha(cleanup):
+    User.objects.create_user('test_owner', password=PASSWORD)
+    client = Client()
+    data = {'username': 'test_owner', 'password': PASSWORD}
+    data.update(captcha_data())
+    data['captcha_1'] = 'wrong-answer'
+    response = client.post('/en/accounts/login/', data)
+    assert response.status_code == 200
+    assert b'Incorrect verification code' in response.content
+    assert client.session.get('_auth_user_id') is None
+
+
+def test_login_does_not_check_password_until_captcha_passes(cleanup):
+    User.objects.create_user('test_owner', password=PASSWORD)
+    client = Client()
+
+    data = {'username': 'test_owner', 'password': 'wrong-password'}
+    data.update(captcha_data())
+    data['captcha_1'] = 'wrong-answer'
+    response = client.post('/en/accounts/login/', data)
+    assert b'Incorrect verification code' in response.content
+    assert b'correct username and password' not in response.content
+
+    data = {'username': 'test_owner', 'password': 'wrong-password'}
+    data.update(captcha_data())
+    response = client.post('/en/accounts/login/', data)
+    assert b'correct username and password' in response.content
+
+
+def test_login_page_renders_captcha(cleanup):
+    response = Client().get('/en/accounts/login/')
+    assert response.status_code == 200
+    assert b'name="captcha_0"' in response.content
+    assert b'name="captcha_1"' in response.content
+    assert b'/captcha/image/' in response.content

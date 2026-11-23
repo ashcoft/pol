@@ -63,24 +63,32 @@ existing feeds:
 * Same features from a `morss`-style command line.
 
 The index page accepts `?q=<page url>` (for example
-`/?q=https://www.cyclingnews.com`) to run discovery immediately. Each result
+`/?q=https://www.cyclingnews.com`) to prefill the search box. Discovery is
+captcha-protected, so the user enters the code shown in the image and then
+presses **Find RSS**. Each result
 has a **Preview** action that opens a slide-in pane with the latest feed items,
 plus **Copy** and **Open** actions, mirroring the rss-finder interface.
 
 ## Reader HTTP API
 
-The downloader server exposes these endpoints (nginx proxies them, see
-`nginx/default.site-example`):
+The downloader server exposes these endpoints. Django serves the two
+discovery endpoints so it can require a captcha, then proxies them to the
+downloader; the preview endpoint goes straight to the downloader. nginx routes
+each path accordingly (see `nginx/default.site-example`):
 
 | Endpoint | Description |
 | --- | --- |
 | `GET /read?url=<feed>` | Read a feed, or discover one on an HTML page. |
 | `GET /read?url=<feed>&format=json\|csv\|html` | Same, in another format. |
 | `GET /read?url=<feed>&callback=cb` | JSONP output. |
-| `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). |
-| `GET /api/find-feeds?url=<page>` | Alias of `/discover`. |
-| `POST /api/find-feeds` | JSON body `{"url": "..."}`. |
+| `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). Captcha required. |
+| `GET /api/find-feeds?url=<page>` | Alias of `/discover`. Captcha required. |
+| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus the captcha fields. |
 | `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
+
+The discovery endpoints require `captcha_0` (the challenge key) and `captcha_1`
+(the answer). Load the index page to get a fresh key and its image at
+`/captcha/image/<key>/`, solve it, then send both fields with the URL.
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
@@ -97,8 +105,10 @@ Examples:
 ```bash
 curl 'http://localhost/read?url=https://example.com/feed.xml'
 curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltext=1'
-curl 'http://localhost/discover?url=https://example.com/'
 ```
+
+Feed discovery needs the captcha fields described above, so use the web
+interface or submit them explicitly.
 
 ## Command line
 
@@ -239,9 +249,10 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 The template proxies `/` to the Django server on port 8000 (Gunicorn in
-production) and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`, `/discover`
-and `/api/` to the downloader on port 1234. The Docker stack publishes those
-same loopback ports for the host nginx.
+production). It also sends `/discover` and `/api/find-feeds` to Django so the
+captcha check runs, while `/downloader`, `/feed`, `/feed1`, `/read`, `/rss` and
+the rest of `/api/` (the preview endpoint) go to the downloader on port 1234.
+The Docker stack publishes those same loopback ports for the host nginx.
 
 The template forwards the browser `Host` header so Django's CSRF checks pass
 behind the proxy. If you reach the app by anything other than
@@ -329,9 +340,9 @@ The stack starts two services:
   at `/var/lib/postgresql`
 
 The compose stack does not run nginx. Use the nginx from Ubuntu Server LTS
-(1.28.3 on 26.04) with the included template; it proxies `/` to
-`127.0.0.1:8000` and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`,
-`/discover` and `/api/` to `127.0.0.1:1234`.
+(1.28.3 on 26.04) with the included template; it proxies `/`, `/discover` and
+`/api/find-feeds` to `127.0.0.1:8000` and `/downloader`, `/feed`, `/feed1`,
+`/read`, `/rss` and the rest of `/api/` to `127.0.0.1:1234`.
 
 At start, `frontend/start.sh` waits for PostgreSQL, runs `migrate` and
 `loaddata`, then starts the downloader and Gunicorn. `settings.py` is generated
@@ -413,6 +424,9 @@ docker compose -f docker-compose.prod.yml up -d
 
 # database backup
 docker compose exec -T dbpolitepol sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > pol.sql
+
+# delete expired captcha challenges (run from cron, for example hourly)
+docker compose exec -T politepol python frontend/manage.py captcha_clean
 
 # image backup (for hosts that cannot pull from GHCR)
 POL_VERSION=$(grep -E '^POL_VERSION=' .env 2>/dev/null | cut -d= -f2-)

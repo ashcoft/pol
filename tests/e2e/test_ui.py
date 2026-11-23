@@ -70,9 +70,15 @@ def _serve_discovery(http_server):
     })
 
 
+def _fill_captcha(page):
+    # The E2E stack sets CAPTCHA_TEST_MODE=1; any answer is accepted there.
+    page.fill('input[name="captcha_1"]', 'passed')
+
+
 def _discover(page, http_server):
     page.goto(f'{BASE_URL}/en/')
     page.fill('input[name="url"]', http_server.base_url)
+    _fill_captcha(page)
     page.click('input[type="submit"]')
     expect(page.locator('#feed-finder-status')).to_have_text(
         re.compile('Found 1 RSS feed'))
@@ -83,6 +89,7 @@ def test_home_page_loads(page):
     expect(page).to_have_title(re.compile('Polite'))
     expect(page.get_by_role('heading', name='RSS Finder')).to_be_visible()
     expect(page.locator('input[name="url"]')).to_be_visible()
+    expect(page.locator('input[name="captcha_1"]')).to_be_visible()
     expect(page.locator('input[type="submit"]')).to_be_visible()
 
 
@@ -111,6 +118,7 @@ def test_no_feed_opens_the_builder(page, http_server):
         200, {'Content-Type': 'text/html'}, '<html><body>no feeds</body></html>')
     page.goto(f'{BASE_URL}/en/')
     page.fill('input[name="url"]', http_server.base_url)
+    _fill_captcha(page)
     page.click('input[type="submit"]')
     page.wait_for_url(re.compile(r'/setup\?url='))
     expect(page.locator('#setup-tool-string')).to_be_visible()

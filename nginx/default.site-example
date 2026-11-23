@@ -50,13 +50,22 @@ server {
 		proxy_pass http://127.0.0.1:1234;
 	}
 
+	# Feed discovery is captcha-protected in Django.
 	location /discover {
 		proxy_set_header  Host  $http_host;
 		proxy_set_header  X-Forwarded-Proto  $scheme;
 		proxy_set_header  X-Real-IP $remote_addr;
-		proxy_pass http://127.0.0.1:1234;
+		proxy_pass http://127.0.0.1:8000;
 	}
 
+	location = /api/find-feeds {
+		proxy_set_header  Host  $http_host;
+		proxy_set_header  X-Forwarded-Proto  $scheme;
+		proxy_set_header  X-Real-IP $remote_addr;
+		proxy_pass http://127.0.0.1:8000;
+	}
+
+	# The preview API stays on the downloader; it has no form to protect.
 	location /api/ {
 		proxy_set_header  Host  $http_host;
 		proxy_set_header  X-Forwarded-Proto  $scheme;

@@ -225,8 +225,8 @@
         }
 
         function openFeedBuilder(url) {
-            // Reuse the index form's existing url -> setup redirect.
-            window.location.assign(window.location.pathname + '?url=' + encodeURIComponent(url));
+            var setupUrl = $form.data('setup-url') || '/setup';
+            window.location.assign(setupUrl + '?url=' + encodeURIComponent(url));
         }
 
         function renderResults(feeds, sourceUrl) {
@@ -291,6 +291,22 @@
             });
         }
 
+        function captchaData() {
+            return {
+                captcha_0: $('input[name="captcha_0"]').val() || '',
+                captcha_1: $('input[name="captcha_1"]').val() || ''
+            };
+        }
+
+        function refreshCaptcha() {
+            var url = $('.captcha-refresh').data('captcha-refresh-url') || '/captcha/refresh/';
+            $.getJSON(url, function (data) {
+                $('img.captcha').attr('src', data.image_url);
+                $('input[name="captcha_0"]').val(data.key);
+                $('input[name="captcha_1"]').val('');
+            });
+        }
+
         function runDiscovery(url, scrollToResults) {
             url = $.trim(url || '');
             if (!url) {
@@ -298,6 +314,12 @@
                 return;
             }
             if (running) {
+                return;
+            }
+            var captcha = captchaData();
+            if (!captcha.captcha_1) {
+                $status.text('Enter the verification code first.');
+                $('input[name="captcha_1"]').trigger('focus');
                 return;
             }
 
@@ -308,7 +330,13 @@
 
             $.ajax({
                 url: '/discover',
-                data: {url: url},
+                method: 'POST',
+                data: {
+                    url: url,
+                    captcha_0: captcha.captcha_0,
+                    captcha_1: captcha.captcha_1,
+                    csrfmiddlewaretoken: $('input[name="csrfmiddlewaretoken"]').val()
+                },
                 dataType: 'json'
             }).done(function (data) {
                 var feeds = (data && data.feeds) || [];
@@ -327,13 +355,19 @@
                 }
             }).fail(function (xhr) {
                 var message = 'Feed discovery failed.';
+                var captchaFailed = false;
                 try {
-                    message = JSON.parse(xhr.responseText).error || message;
+                    var parsed = JSON.parse(xhr.responseText);
+                    message = parsed.error || message;
+                    captchaFailed = Boolean(parsed.captcha);
                 } catch (ignore) {
                     // keep the generic message
                 }
                 if (xhr.status === 400) {
                     $status.text(message);
+                    if (captchaFailed) {
+                        $('input[name="captcha_1"]').trigger('focus');
+                    }
                     return;
                 }
                 $status.text(message + ' Opening the feed builder…');
@@ -341,6 +375,7 @@
             }).always(function () {
                 running = false;
                 $submit.prop('disabled', false);
+                refreshCaptcha();
             });
         }
 
@@ -395,7 +430,8 @@
         var query = params.get('q');
         if (query) {
             $input.val(query);
-            runDiscovery(query, true);
+            $status.text('Enter the verification code, then press Find RSS.');
+            $('input[name="captcha_1"]').trigger('focus');
         }
     });
 })(jQuery);
