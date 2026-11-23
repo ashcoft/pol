@@ -182,6 +182,33 @@ def test_captcha_image_is_served():
     assert response['Content-Type'] == 'image/png'
 
 
+@override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)
+def test_setup_normalizes_url_without_scheme():
+    response = Client().get('/en/setup', {'url': 'example.com'})
+    assert response.status_code == 200
+    html = response.content.decode('utf-8')
+    assert '/downloader?url=https%3A%2F%2Fexample.com' in html
+
+
+@override_settings(**TEST_SETTINGS)
+def test_setup_rejects_invalid_url():
+    response = Client().get('/en/setup', {'url': 'mailto:x@example.com'})
+    assert response.status_code == 400
+
+
+@override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=False)
+def test_setup_rejects_private_url():
+    response = Client().get('/en/setup', {'url': 'http://127.0.0.1/'})
+    assert response.status_code == 400
+    assert b'This URL is not allowed.' in response.content
+
+
+@override_settings(**TEST_SETTINGS, READER_ALLOW_PRIVATE=True)
+def test_setup_allows_private_url_when_enabled():
+    response = Client().get('/en/setup', {'url': 'http://127.0.0.1/'})
+    assert response.status_code == 200
+
+
 @override_settings(**TEST_SETTINGS)
 def test_contact_links_to_github_and_has_no_email():
     response = Client().get('/en/contact')

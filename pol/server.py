@@ -43,6 +43,21 @@ log = Logger()
 def _text(value):
     return value.decode('utf-8', 'replace') if isinstance(value, bytes) else value
 
+
+def _http_url(value):
+    """Return an absolute http(s) URL as text, or None for anything else."""
+    value = _text(value)
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        parts = six.moves.urllib.parse.urlsplit(value)
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ('http', 'https') or not parts.netloc:
+        return None
+    return value
+
 class Downloader(object):
 
     def __init__(self, feed, debug, snapshot_dir, stat_tool, memon, request,
@@ -518,7 +533,11 @@ class Site(resource.Resource):
         if self.reader and self.reader.handles(request.path):
             return self.reader.get(request)
         if b'url' in request.args: # page for frontend
-            url = request.args[b'url'][0]
+            raw_url = request.args[b'url'][0] if request.args.get(b'url') else b''
+            url = _http_url(raw_url)
+            if not url:
+                request.setResponseCode(400)
+                return b'Url is invalid'
 
             self.startRequest(request, url, sanitize=True)
             return NOT_DONE_YET
@@ -539,6 +558,10 @@ class Site(resource.Resource):
                     return res.encode('utf-8')
 
                 url, feed_config = res
+                url = _http_url(url)
+                if not url:
+                    request.setResponseCode(400)
+                    return b'Feed URL is invalid'
                 self.startRequest(request, url, feed_config, sanitize=sanitize)
                 return NOT_DONE_YET
         else: # neither page and feed

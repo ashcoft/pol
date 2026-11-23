@@ -224,9 +224,22 @@
                 .filter(':visible');
         }
 
+        function normalizeUrl(value) {
+            var url = $.trim(value || '');
+            if (!url) {
+                return '';
+            }
+            return /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : 'https://' + url;
+        }
+
         function openFeedBuilder(url) {
             var setupUrl = $form.data('setup-url') || '/setup';
-            window.location.assign(setupUrl + '?url=' + encodeURIComponent(url));
+            var target = normalizeUrl(url);
+            if (!target) {
+                $status.text('Enter a page URL first.');
+                return;
+            }
+            window.location.assign(setupUrl + '?url=' + encodeURIComponent(target));
         }
 
         function renderResults(feeds, sourceUrl) {
@@ -308,7 +321,7 @@
         }
 
         function runDiscovery(url, scrollToResults) {
-            url = $.trim(url || '');
+            url = normalizeUrl(url);
             if (!url) {
                 $status.text('Enter a page URL first.');
                 return;

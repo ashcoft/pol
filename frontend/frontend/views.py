@@ -5,6 +5,7 @@ import json
 import re
 
 from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.conf import settings as django_settings
 from django.db.models import Count
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import (
@@ -112,11 +113,24 @@ def contact(request):
 @ensure_csrf_cookie
 def setup(request):
     if request.method == 'GET' and 'url' in request.GET:
-        external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(request.GET['url'], safe='')
+        try:
+            url = _normalize_discovery_url(request.GET.get('url', ''))
+        except ValueError:
+            return HttpResponseBadRequest('Invalid url')
+
+        if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
+            from pol.reader.errors import InvalidURLError
+            from pol.reader.safety import assert_public_url
+            try:
+                assert_public_url(url)
+            except InvalidURLError:
+                return HttpResponseBadRequest('This URL is not allowed.')
+
+        external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(url, safe='')
         return render(request, 'frontend/setup.html',
                         {
                             'external_page_url': external_page_url,
-                            'page_url': request.GET['url']
+                            'page_url': url
                         })
 
     return HttpResponseBadRequest('Url is required')
