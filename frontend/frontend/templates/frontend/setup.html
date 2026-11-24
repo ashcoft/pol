@@ -53,6 +53,12 @@
 }
 </style>
 {% trans "xpath.link" as xpath_link %}
+{% if setup_initial %}
+{{ setup_initial|json_script:"setup-initial" }}
+<script type="text/javascript">
+    window.SETUP_INITIAL = JSON.parse(document.getElementById('setup-initial').textContent);
+</script>
+{% endif %}
 <div id="loader-bg"><div id="loader"></div></div>
     <div id="restored-alert" class="alert fade in" style="display: none">
         <button type="button" class="close" data-dismiss="alert">×</button>
@@ -135,7 +141,7 @@
         <a id="st-ext-trigger" href="javascript:void(0)"  style="display:none" class="has-tooltip" title="{% trans 'setup.extended_tip' %}"
             data-trigger="hover focus manual" data-animation="true"><img src="{% static 'frontend/images/wrench48.png' %}" /></a>
         <button id="check" class="btn btn-large" style="display:none">{% trans 'setup.check' %} <i class="icon-check" style="margin-top: 3px"></i></button>
-        <button id="create" class="btn btn-large btn-primary disabled"  data-page-url="{{ page_url }}" data-feed-page-url="{{ feed_page_url }}">{% trans 'setup.create' %} <i class="icon-arrow-right icon-white" style="margin-top: 3px"></i></button>
+        <button id="create" class="btn btn-large btn-primary disabled"  data-page-url="{{ page_url }}" data-feed-id="{{ feed_id|default:'' }}" data-feed-page-url="{{ feed_page_url }}">{% if feed_id %}{% trans "Save changes" %}{% else %}{% trans 'setup.create' %}{% endif %} <i class="icon-arrow-right icon-white" style="margin-top: 3px"></i></button>
     </div>
 
 <style>

@@ -63,24 +63,50 @@ existing feeds:
 * Same features from a `morss`-style command line.
 
 The index page accepts `?q=<page url>` (for example
-`/?q=https://www.cyclingnews.com`) to run discovery immediately. Each result
+`/?q=https://www.cyclingnews.com`) to prefill the search box. Discovery is
+protected by a self-hosted Cap proof-of-work challenge, so the user
+completes the verification widget and then presses **Find RSS**. Each result
 has a **Preview** action that opens a slide-in pane with the latest feed items,
 plus **Copy** and **Open** actions, mirroring the rss-finder interface.
 
 ## Reader HTTP API
 
-The downloader server exposes these endpoints (nginx proxies them, see
-`nginx/default.site-example`):
+The downloader server exposes these endpoints. Django serves the two
+discovery endpoints so it can require a captcha, then proxies them to the
+downloader; the preview endpoint goes straight to the downloader. nginx routes
+each path accordingly (see `nginx/default.site-example`):
 
 | Endpoint | Description |
 | --- | --- |
 | `GET /read?url=<feed>` | Read a feed, or discover one on an HTML page. |
 | `GET /read?url=<feed>&format=json\|csv\|html` | Same, in another format. |
 | `GET /read?url=<feed>&callback=cb` | JSONP output. |
-| `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). |
-| `GET /api/find-feeds?url=<page>` | Alias of `/discover`. |
-| `POST /api/find-feeds` | JSON body `{"url": "..."}`. |
+| `GET /discover?url=<page>` | `{"feeds": [{"title", "url", "type"}]}` (rss-finder shape). Captcha required. |
+| `GET /api/find-feeds?url=<page>` | Alias of `/discover`. Captcha required. |
+| `POST /api/find-feeds` | JSON body `{"url": "..."}` plus a solved Cap `cap-token` field. |
 | `GET /api/feed-preview?url=<feed>` | Feed metadata and the latest items as JSON. |
+
+The discovery endpoints require a solved Cap token. Load the index page,
+complete the Cap widget, then send its hidden `cap-token` field with the URL.
+Cap is self-hosted: the compose stack runs `capd` and Valkey. Create a site key
+in the capd dashboard (`CAP_PUBLIC_URL`, log in with `CAP_ADMIN_KEY`; Compose
+requires you to set it in `.env`), then set `CAP_SITE_KEY` and `CAP_SECRET` in
+`.env`. `CAP_PUBLIC_URL` is the browser-facing capd origin; `CAP_API_URL` is the
+server-to-server origin (default `http://cap:3000`). `CAP_TEST_MODE` is for the
+E2E stack only. Existing installations must configure these values when they
+upgrade; without a site key and secret, login and discovery stay disabled.
+
+Site keys live in Cap's Valkey volume. If that volume is reset, create a new
+key in the dashboard and update `CAP_SITE_KEY` / `CAP_SECRET`, then recreate
+the app. Behind nginx, `nginx/cap.site-example` forwards the client address as
+`X-Forwarded-For`; in the capd dashboard open **Instance settings > Visitor
+location > Your proxy or CDN** and select the proxy option so capd uses that
+header for its per-visitor rate limits.
+
+When Django runs on the host instead of Compose, export `CAP_API_URL`
+(defaults to `http://cap:3000`, so use `http://127.0.0.1:3000`), `CAP_PUBLIC_URL`,
+`CAP_SITE_KEY`, and `CAP_SECRET` in the shell that starts Gunicorn. Editing
+`.env` only affects Compose.
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
@@ -97,8 +123,13 @@ Examples:
 ```bash
 curl 'http://localhost/read?url=https://example.com/feed.xml'
 curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltext=1'
-curl 'http://localhost/discover?url=https://example.com/'
 ```
+
+Feed discovery needs a solved Cap token, so use the web interface or submit
+the widget's `cap-token` field explicitly. `POST /api/find-feeds` is also
+protected by Django's CSRF middleware: send the `csrftoken` cookie from the
+index page together with a matching `X-CSRFToken` header (or a
+`csrfmiddlewaretoken` form field).
 
 ## Command line
 
@@ -239,9 +270,12 @@ sudo nginx -t && sudo systemctl reload nginx
 ```
 
 The template proxies `/` to the Django server on port 8000 (Gunicorn in
-production) and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`, `/discover`
-and `/api/` to the downloader on port 1234. The Docker stack publishes those
-same loopback ports for the host nginx.
+production). It also sends `/discover` and `/api/find-feeds` to Django so the
+captcha check runs, while `/downloader`, `/feed`, `/feed1`, `/read`, `/rss` and
+the rest of `/api/` (the preview endpoint) go to the downloader on port 1234.
+The Docker stack publishes those same loopback ports for the host nginx. The
+stack also runs `capd` on `127.0.0.1:3000`; use `nginx/cap.site-example` for the
+browser-facing Cap origin and set `CAP_PUBLIC_URL` to it.
 
 The template forwards the browser `Host` header so Django's CSRF checks pass
 behind the proxy. If you reach the app by anything other than
@@ -263,7 +297,7 @@ and must not be used with this compose file.
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
-cp .env.example .env      # optional; edit the values
+cp .env.example .env      # then set CAP_ADMIN_KEY and the Cap values
 docker compose up -d
 ```
 
@@ -329,9 +363,9 @@ The stack starts two services:
   at `/var/lib/postgresql`
 
 The compose stack does not run nginx. Use the nginx from Ubuntu Server LTS
-(1.28.3 on 26.04) with the included template; it proxies `/` to
-`127.0.0.1:8000` and `/downloader`, `/feed`, `/feed1`, `/read`, `/rss`,
-`/discover` and `/api/` to `127.0.0.1:1234`.
+(1.28.3 on 26.04) with the included template; it proxies `/`, `/discover` and
+`/api/find-feeds` to `127.0.0.1:8000` and `/downloader`, `/feed`, `/feed1`,
+`/read`, `/rss` and the rest of `/api/` to `127.0.0.1:1234`.
 
 At start, `frontend/start.sh` waits for PostgreSQL, runs `migrate` and
 `loaddata`, then starts the downloader and Gunicorn. `settings.py` is generated
@@ -468,6 +502,9 @@ private-host reader flag so the local fixture is reachable:
 POL_READER_ALLOW_PRIVATE=1 python downloader.py 1234
 
 # terminal 2
+# CAP_TEST_MODE=1 makes the widget accept the `passed` token. Test only:
+# never enable it in production.
+CAP_TEST_MODE=1 POL_READER_ALLOW_PRIVATE=1 \
 python -m gunicorn frontend.wsgi:application \
   --pythonpath ./frontend --bind 127.0.0.1:8000
 

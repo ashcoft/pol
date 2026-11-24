@@ -5,6 +5,12 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from lxml import etree
 
+from .cap import CapField
+from .urlutils import normalize_discovery_url
+
+CAPTCHA_LABEL = _('Verification')
+CAPTCHA_ERROR = _('Verification failed. Please try again.')
+
 
 def _validate_xpath(value):
     if not value or not value.strip():
@@ -18,16 +24,37 @@ def _validate_xpath(value):
 
 class IndexForm(forms.Form):
     url = forms.CharField(max_length=2000, widget=forms.TextInput(attrs={'class': 'input-xxlarge', 'placeholder': 'http://'}))
+    captcha = CapField(
+        label=CAPTCHA_LABEL,
+        error_messages={'invalid': CAPTCHA_ERROR},
+    )
 
 
 class LoginForm(AuthenticationForm):
+    captcha = CapField(
+        label=CAPTCHA_LABEL,
+        error_messages={'invalid': CAPTCHA_ERROR},
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name in ('username', 'password'):
             self.fields[name].widget.attrs.update({'class': 'input-xlarge'})
 
+    def clean(self):
+        # Do not verify credentials until the captcha passes; this keeps the
+        # login form from hashing passwords for unsolved challenges.
+        if self.errors.get('captcha'):
+            return self.cleaned_data
+        return super().clean()
+
 
 class SignUpForm(UserCreationForm):
+    captcha = CapField(
+        label=CAPTCHA_LABEL,
+        error_messages={'invalid': CAPTCHA_ERROR},
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name in ('username', 'password1', 'password2'):
@@ -63,6 +90,10 @@ class FeedEditForm(forms.Form):
 
     def clean_uri(self):
         uri = self.cleaned_data['uri']
+        try:
+            uri = normalize_discovery_url(uri)
+        except ValueError as exc:
+            raise forms.ValidationError(_('Invalid URL format')) from exc
         if not getattr(settings, 'READER_ALLOW_PRIVATE', False):
             from pol.reader.errors import InvalidURLError
             from pol.reader.safety import assert_public_url

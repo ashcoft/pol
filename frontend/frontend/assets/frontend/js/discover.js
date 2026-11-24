@@ -224,9 +224,34 @@
                 .filter(':visible');
         }
 
+        function normalizeUrl(value) {
+            var url = $.trim(value || '');
+            if (!url) {
+                return '';
+            }
+            if (!/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(url)) {
+                url = 'https://' + url;
+            }
+            var match = url.match(/^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([\s\S]*)$/i);
+            if (!match || !/^https?$/i.test(match[1])) {
+                return '';
+            }
+            var authority = match[2];
+            var at = authority.lastIndexOf('@');
+            var userinfo = at >= 0 ? authority.slice(0, at + 1) : '';
+            var hostport = at >= 0 ? authority.slice(at + 1) : authority;
+            return match[1].toLowerCase() + '://' + userinfo +
+                hostport.toLowerCase() + match[3];
+        }
+
         function openFeedBuilder(url) {
-            // Reuse the index form's existing url -> setup redirect.
-            window.location.assign(window.location.pathname + '?url=' + encodeURIComponent(url));
+            var setupUrl = $form.data('setup-url') || '/setup';
+            var target = normalizeUrl(url);
+            if (!target) {
+                setStatus('Enter a page URL first.');
+                return;
+            }
+            window.location.assign(setupUrl + '?url=' + encodeURIComponent(target));
         }
 
         function renderResults(feeds, sourceUrl) {
@@ -236,7 +261,7 @@
                 return;
             }
 
-            $status.text('Found ' + feeds.length + ' RSS feed' + (feeds.length === 1 ? '' : 's'));
+            setStatus('Found ' + feeds.length + ' RSS feed' + (feeds.length === 1 ? '' : 's'));
             var seen = {};
 
             $.each(feeds, function (_index, feed) {
@@ -291,29 +316,101 @@
             });
         }
 
+        function captchaValue() {
+            return $('input[name="cap-token"]').val() || '';
+        }
+
+        function resetCaptcha() {
+            var widget = document.querySelector('cap-widget');
+            if (widget && typeof widget.reset === 'function') {
+                widget.reset();
+                if (typeof widget.solve === 'function') {
+                    widget.solve();
+                }
+            }
+        }
+
+        function focusCaptcha() {
+            var widget = document.querySelector('cap-widget');
+            if (widget && widget.scrollIntoView) {
+                widget.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        }
+
+        function setStatus(message, loading) {
+            $status.toggleClass('is-loading', Boolean(loading));
+            if (loading) {
+                var spinner = document.createElement('span');
+                spinner.className = 'rss-spinner';
+                spinner.setAttribute('aria-hidden', 'true');
+                $status.empty().append(
+                    spinner, document.createTextNode(' ' + message));
+            } else {
+                $status.text(message);
+            }
+        }
+
+        function showSkeletons() {
+            $results.empty();
+            for (var i = 0; i < 3; i++) {
+                var item = document.createElement('li');
+                item.className = 'feed-result feed-result-skeleton';
+                item.setAttribute('aria-hidden', 'true');
+
+                var favicon = document.createElement('span');
+                favicon.className = 'skeleton-favicon';
+
+                var lines = document.createElement('span');
+                lines.className = 'skeleton-lines';
+                var line = document.createElement('span');
+                line.className = 'skeleton-line';
+                var shortLine = document.createElement('span');
+                shortLine.className = 'skeleton-line short';
+                lines.appendChild(line);
+                lines.appendChild(shortLine);
+
+                item.appendChild(favicon);
+                item.appendChild(lines);
+                $results.append(item);
+            }
+        }
+
         function runDiscovery(url, scrollToResults) {
-            url = $.trim(url || '');
+            url = normalizeUrl(url);
             if (!url) {
-                $status.text('Enter a page URL first.');
+                setStatus('Enter a page URL first.');
                 return;
             }
+            $input.val(url);
             if (running) {
+                return;
+            }
+            var captcha = captchaValue();
+            if (!captcha) {
+                setStatus('Complete the verification first.');
+                focusCaptcha();
                 return;
             }
 
             running = true;
             $submit.prop('disabled', true);
-            $status.text('Looking for feeds…');
-            $results.empty();
+            setStatus('Looking for feeds…', true);
+            showSkeletons();
+            $results.attr('aria-busy', 'true');
 
             $.ajax({
                 url: '/discover',
-                data: {url: url},
+                method: 'POST',
+                data: {
+                    url: url,
+                    captcha: captcha,
+                    csrfmiddlewaretoken: $('input[name="csrfmiddlewaretoken"]').val()
+                },
                 dataType: 'json'
             }).done(function (data) {
                 var feeds = (data && data.feeds) || [];
                 if (!feeds.length) {
-                    $status.text('No RSS feed found — opening the feed builder…');
+                    setStatus('No RSS feed found — opening the feed builder…');
                     openFeedBuilder(url);
                     return;
                 }
@@ -327,20 +424,29 @@
                 }
             }).fail(function (xhr) {
                 var message = 'Feed discovery failed.';
+                var captchaFailed = false;
                 try {
-                    message = JSON.parse(xhr.responseText).error || message;
+                    var parsed = JSON.parse(xhr.responseText);
+                    message = parsed.error || message;
+                    captchaFailed = Boolean(parsed.captcha);
                 } catch (ignore) {
                     // keep the generic message
                 }
                 if (xhr.status === 400) {
-                    $status.text(message);
+                    setStatus(message);
+                    if (captchaFailed) {
+                        focusCaptcha();
+                    }
                     return;
                 }
-                $status.text(message + ' Opening the feed builder…');
+                setStatus(message + ' Opening the feed builder…');
                 openFeedBuilder(url);
             }).always(function () {
                 running = false;
                 $submit.prop('disabled', false);
+                $results.find('.feed-result-skeleton').remove();
+                $results.attr('aria-busy', 'false');
+                resetCaptcha();
             });
         }
 
@@ -395,7 +501,8 @@
         var query = params.get('q');
         if (query) {
             $input.val(query);
-            runDiscovery(query, true);
+            setStatus('Complete the verification, then press Find RSS.');
+            focusCaptcha();
         }
     });
 })(jQuery);

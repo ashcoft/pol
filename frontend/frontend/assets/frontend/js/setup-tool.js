@@ -276,6 +276,7 @@ window.getCookie = getCookie;
 
 // html2json [tag_name, {attributes_dict}, [children]]
 var iframeHtmlJson = null;
+window.polSnapshotTime = null;
 
 function gatherSelectedTagIds(name_ids) {
     var selected_any = false;
@@ -305,8 +306,8 @@ function requestSelection() {
                 success: function(data){
                     resolve(data)
                 },
-                failure: function(errMsg) {
-                    reject(errMsg);
+                error: function(xhr) {
+                    reject(xhr.responseText || xhr.statusText);
                 }
             });
         });
@@ -413,17 +414,28 @@ function onCreateButtonClick() {
         loader(true);
         createFeed().then(function(data){
             if (ET.active()) {
-                var res = JSON.parse(data);
-                if (res.success)
+                var res = data;
+                if (typeof res === 'string') {
+                    try {
+                        res = JSON.parse(res);
+                    } catch (err) {
+                        loader(false);
+                        return;
+                    }
+                }
+                if (res && res.success)
                     window.location.href = res.url; // feed_page_url
                 else {
-                    ET.updateUIMessages(res.messages);
+                    if (res && res.messages)
+                        ET.updateUIMessages(res.messages);
                     //unfreez UI
                     loader(false);
                 }
             }
-			else
-				window.location.href = data; // feed_page_url
+            else if (typeof data === 'string' && data)
+                window.location.href = data; // feed_page_url
+            else
+                loader(false);
         }, function(error){
             console.log('Server error: '+ error);
             //unfreez UI
@@ -434,8 +446,10 @@ function onCreateButtonClick() {
 
 function createFeed() {
     var selectors = null;
+    var selected_any;
     if (ET.active()) {
         selectors = ET.getUIConfig();
+        selected_any = Boolean(selectors[0].trim() && Object.keys(selectors[1]).length);
     }
     else {
         // gather selected tag-ids
@@ -449,16 +463,16 @@ function createFeed() {
                 type: 'POST',
                 url: ET.active() ? "/setup_create_feed_ext" :"/setup_create_feed",
                 data: JSON.stringify(ET.active()
-                                     ? { selectors: selectors, snapshot_time: snapshot_time, url:$('#create').data('page-url') }
-                                     : { html: iframeHtmlJson, names: name_ids, url:$('#create').data('page-url') }
+                                     ? { selectors: selectors, snapshot_time: window.polSnapshotTime, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
+                                     : { html: iframeHtmlJson, names: name_ids, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
                                     ),
                 contentType: "application/json; charset=utf-8",
                 headers: {"X-CSRFToken": getCookie('csrftoken')},
                 success: function(data){
                     resolve(data)
                 },
-                failure: function(errMsg) {
-                    reject(errMsg);
+                error: function(xhr) {
+                    reject(xhr.responseText || xhr.statusText);
                 }
             });
         });
@@ -502,7 +516,7 @@ $(document).ready(function(){
         $('iframe').contents().on('mouseenter mouseleave', '*[tag-id]', onIframeElementHover);
 		var iframe_window = $('iframe')[0].contentWindow;
         iframeHtmlJson = iframe_window.html2json;
-		snapshot_time = iframe_window.snapshot_time;
+		window.polSnapshotTime = iframe_window.snapshot_time;
         loader(false);
     });
 

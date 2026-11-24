@@ -14,6 +14,25 @@
 .rss-finder-home * {
     font-style: normal !important;
 }
+.rss-captcha {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.rss-captcha-label {
+    font-weight: 600;
+    margin: 0;
+}
+.rss-captcha-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+}
 </style>
 <div class="welcom rss-finder-home" style="position: relative">
     <div id="help" style="position: absolute; z-index: 2; right:0; top: 0; width: 60px;">
@@ -36,14 +55,26 @@
             {{ form.url.errors }}
         </div>
         {% endif %}
+        {% if form.captcha.errors %}
+        <div class="alert alert-error">
+            {{ form.captcha.errors|striptags }}
+        </div>
+        {% endif %}
 
-        <form method="get" class="rss-search-form">
+        <form method="get" class="rss-search-form" data-setup-url="{% url 'setup' %}">
+            {% csrf_token %}
             <div class="rss-search-box">
                 {{ form.url }}
                 <input type="submit" id="go-btn" value="{% trans 'Find RSS' %}" class="rss-search-button" />
             </div>
+            <div class="rss-captcha">
+                <span class="rss-captcha-label">{% trans "Verification" %}</span>
+                <div class="rss-captcha-controls">
+                    {{ form.captcha }}
+                </div>
+            </div>
         </form>
-        <p class="rss-search-help">{% trans "Enter any website URL. If it publishes RSS, we'll list the feeds; otherwise we'll open the feed builder." %}</p>
+        <p class="rss-search-help">{% trans "Complete the verification, then enter a website URL. If it publishes RSS, we'll list the feeds; otherwise we'll open the feed builder." %}</p>
 
         <div id="feed-finder-status" class="rss-finder-status" role="status" aria-live="polite"></div>
         <ul id="feed-finder-results" class="rss-finder-results" aria-live="polite"></ul>

@@ -10,6 +10,11 @@
 <div class="page-header">
   <h1>{% trans 'subscribe.feed_ready' %}</h1>
 </div>
+{% if duplicate %}
+<div class="alert alert-info">
+  {% trans "A feed for this page already exists, so the existing feed was opened instead of creating a duplicate." %}
+</div>
+{% endif %}
 <div class="media">
   <a class="pull-left" href="{{ feed_url }}">
 	<img src="{% static 'frontend/images/rss-640.png' %}" width="64" height="64" class="media-object" />

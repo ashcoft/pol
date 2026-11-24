@@ -14,7 +14,7 @@ import six
 from lxml import etree
 
 from twisted.web import server, resource
-from twisted.internet import reactor, endpoints, defer
+from twisted.internet import reactor, endpoints, defer, threads
 from twisted.web.client import Agent, BrowserLikeRedirectAgent, PartialDownloadError, HTTPConnectionPool
 from twisted.web.server import NOT_DONE_YET
 from twisted.web.http_headers import Headers
@@ -32,6 +32,8 @@ from scrapy.selector import Selector
 from pol.log import LogHandler
 from .feed import Feed
 from .client import ppReadBody, IGNORE_SIZE
+from .reader.errors import InvalidURLError
+from .reader.safety import assert_public_url
 from .reader.web import ReaderEndpoints
 
 from twisted.logger import Logger
@@ -42,6 +44,46 @@ log = Logger()
 
 def _text(value):
     return value.decode('utf-8', 'replace') if isinstance(value, bytes) else value
+
+
+def _http_url(value):
+    """Return an absolute http(s) URL as text, or None for anything else."""
+    value = _text(value)
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        parts = six.moves.urllib.parse.urlsplit(value)
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ('http', 'https') or not parts.netloc:
+        return None
+    return value
+
+
+class _GuardedRedirectAgent(BrowserLikeRedirectAgent):
+    """Follow redirects only when the new destination is still public."""
+
+    def __init__(self, agent, allow_private=False, redirectLimit=5):
+        BrowserLikeRedirectAgent.__init__(
+            self, agent, redirectLimit=redirectLimit)
+        self._allow_private = allow_private
+
+    def _handleRedirect(self, response, method, uri, headers, redirectCount):
+        if self._allow_private:
+            return BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount)
+        locations = response.headers.getRawHeaders(b'location', [])
+        if not locations:
+            return BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount)
+        target = _text(self._resolveLocation(uri, locations[0]))
+        d = threads.deferToThread(assert_public_url, target)
+        d.addCallback(
+            lambda _: BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount))
+        return d
+
 
 class Downloader(object):
 
@@ -425,7 +467,7 @@ class Site(resource.Resource):
     feed_regexp = re.compile(rb'^/feed/(\d{1,10})')
 
 
-    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
+    def __init__(self, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None, allow_private=False):
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
         self.user_agent = user_agent
@@ -439,6 +481,37 @@ class Site(resource.Resource):
         self.memon= memon
         self.max_size = max_size
         self.downloadercls = downloadercls or Downloader
+        self.allow_private = allow_private
+
+    def _url_allowed(self, url):
+        if self.allow_private:
+            return True
+        try:
+            assert_public_url(url)
+        except InvalidURLError:
+            return False
+        return True
+
+    def _defer_url_check(self, request, url, on_allowed):
+        """Run the blocking DNS check off the reactor thread."""
+        def _allowed(allowed):
+            if allowed:
+                on_allowed()
+                return
+            request.setResponseCode(400)
+            request.write(b'This URL is not allowed.')
+            request.finish()
+
+        def _failed(failure):
+            log.failure('URL safety check failed', failure)
+            if not request.finished:
+                request.setResponseCode(500)
+                request.write(b'Internal error')
+                request.finish()
+
+        d = threads.deferToThread(self._url_allowed, url)
+        d.addCallback(_allowed)
+        d.addErrback(_failed)
 
     def startRequest(self, request, url, feed_config = None, selector_defer=None, sanitize=False):
         if isinstance(url, bytes):
@@ -454,11 +527,12 @@ class Site(resource.Resource):
             else:
                 downloader.writeResponse(request, sresponse, feed_config)
         else:
-            agent = BrowserLikeRedirectAgent(
+            agent = _GuardedRedirectAgent(
                 Agent(reactor,
                     contextFactory=ScrapyClientContextFactory(), # skip certificate verification
                     connectTimeout=10),
                     #pool=pool),
+                allow_private=self.allow_private,
                 redirectLimit=5
             )
 
@@ -518,9 +592,17 @@ class Site(resource.Resource):
         if self.reader and self.reader.handles(request.path):
             return self.reader.get(request)
         if b'url' in request.args: # page for frontend
-            url = request.args[b'url'][0]
-
-            self.startRequest(request, url, sanitize=True)
+            raw_url = request.args[b'url'][0] if request.args.get(b'url') else b''
+            url = _http_url(raw_url)
+            if not url:
+                request.setResponseCode(400)
+                return b'Url is invalid'
+            if self.allow_private:
+                self.startRequest(request, url, sanitize=True)
+                return NOT_DONE_YET
+            self._defer_url_check(
+                request, url,
+                lambda: self.startRequest(request, url, sanitize=True))
             return NOT_DONE_YET
         elif self.feed_regexp.match(request.uri) is not None: # feed
 
@@ -539,7 +621,18 @@ class Site(resource.Resource):
                     return res.encode('utf-8')
 
                 url, feed_config = res
-                self.startRequest(request, url, feed_config, sanitize=sanitize)
+                url = _http_url(url)
+                if not url:
+                    request.setResponseCode(400)
+                    return b'Feed URL is invalid'
+                if self.allow_private:
+                    self.startRequest(
+                        request, url, feed_config, sanitize=sanitize)
+                    return NOT_DONE_YET
+                self._defer_url_check(
+                    request, url,
+                    lambda: self.startRequest(
+                        request, url, feed_config, sanitize=sanitize))
                 return NOT_DONE_YET
         else: # neither page and feed
             return b'Url is invalid'
@@ -558,7 +651,7 @@ class Site(resource.Resource):
 
 class Server(object):
 
-    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None):
+    def __init__(self, port, db_creds, snapshot_dir, user_agent, debug=False, limiter=None, memon=None, stat_tool=None, prefetch_dir=None, feed=None, sitecls=None, downloadercls=None, max_size=IGNORE_SIZE, reader=None, allow_private=False):
         self.port = port
         self.db_creds = db_creds
         self.snapshot_dir = snapshot_dir
@@ -574,7 +667,7 @@ class Server(object):
         if not sitecls:
             sitecls = Site
 
-        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size, reader=reader)
+        self.site = sitecls(self.db_creds, self.snapshot_dir, self.user_agent, self.debug, self.limiter, self.memon, self.stat_tool, self.prefetch_dir, feed, downloadercls=downloadercls, max_size=max_size, reader=reader, allow_private=allow_private)
 
     def requestSelector(self, url=None, feed_config=None):
         d = defer.Deferred()
