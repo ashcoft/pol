@@ -20,9 +20,15 @@ services:
       GUNICORN_WORKERS: '${GUNICORN_WORKERS:-3}'
       GUNICORN_THREADS: '${GUNICORN_THREADS:-4}'
       GUNICORN_TIMEOUT: '${GUNICORN_TIMEOUT:-120}'
+      CAP_API_URL: 'http://cap:3000'
+      CAP_PUBLIC_URL: '${CAP_PUBLIC_URL:-}'
+      CAP_SITE_KEY: '${CAP_SITE_KEY:-}'
+      CAP_SECRET: '${CAP_SECRET:-}'
     depends_on:
       dbpolitepol:
         condition: service_healthy
+      cap:
+        condition: service_started
     container_name: politepol
     restart: unless-stopped
     init: true
@@ -51,8 +57,48 @@ services:
     volumes:
       - pol_pg:/var/lib/postgresql
 
+  cap:
+    image: tiago2/cap:4
+    container_name: cap
+    restart: unless-stopped
+    environment:
+      ADMIN_KEY: '${CAP_ADMIN_KEY:?Set CAP_ADMIN_KEY in .env}'
+      VALKEY_URL: 'redis://valkey:6379'
+    volumes:
+      - cap-data:/usr/src/app/data
+    depends_on:
+      valkey:
+        condition: service_healthy
+    networks:
+      - politepol-network
+    ports:
+      - '127.0.0.1:3000:3000'
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    container_name: cap-valkey
+    restart: unless-stopped
+    command: >
+      valkey-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1
+      --maxmemory-policy noeviction
+      --loglevel warning
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - politepol-network
+
 volumes:
   pol_pg:
+  cap-data:
+  valkey-data:
 
 networks:
   politepol-network:

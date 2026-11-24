@@ -4,15 +4,17 @@ import urllib.request
 import json
 import re
 
+from lxml import etree
+
 from django.contrib.auth import login as auth_login, logout as auth_logout
+from django.conf import settings as django_settings
 from django.db.models import Count
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.http import (
     HttpResponseRedirect, HttpResponse, HttpResponseBadRequest,
     HttpResponseNotAllowed)
 from django.shortcuts import get_object_or_404, redirect, render
-from django.core.validators import URLValidator
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -23,26 +25,9 @@ from .forms import FeedEditForm, IndexForm, LoginForm, SignUpForm
 from .models import Feed, Field, FeedField
 from .settings import DOWNLOADER_PAGE_URL, FEED_PAGE_URL
 from .setup_tool import get_selection_tag_ids, build_xpathes_for_items
+from .urlutils import normalize_discovery_url as _normalize_discovery_url
 
 DOWNLOADER_BASE_URL = getattr(frontend_settings, 'DOWNLOADER_BASE_URL', 'http://127.0.0.1:1234')
-
-_SCHEME_RE = re.compile(r'^([a-z][a-z0-9+.-]*):(?!\d)', re.IGNORECASE)
-
-
-def _normalize_discovery_url(url):
-    """Mirror pol.reader.urls.normalize_url without importing the reader package."""
-    trimmed = (url or '').strip()
-    if not trimmed:
-        raise ValueError('URL is required')
-    scheme = _SCHEME_RE.match(trimmed)
-    # The user-controlled value is deliberately the URL host; URLValidator below
-    # rejects anything that is not a well-formed http(s) URL.
-    candidate = trimmed if scheme else 'https://' + trimmed  # nosemgrep
-    try:
-        URLValidator(schemes=['http', 'https'])(candidate)
-    except ValidationError as exc:
-        raise ValueError('Invalid URL format') from exc
-    return candidate
 
 
 def _session_key(request):
@@ -71,7 +56,7 @@ def _can_manage(request, feed, allow_legacy_claim=False):
 def _deny_feed_access(request):
     if not request.user.is_authenticated:
         login_url = reverse('login') + '?' + urllib.parse.urlencode(
-            {'next': request.path})
+            {'next': request.get_full_path()})
         return HttpResponseRedirect(login_url)
     raise PermissionDenied(_('You cannot manage this feed.'))
 
@@ -88,13 +73,9 @@ def index(request):
     if request.method == 'GET' and 'url' in request.GET:
         form = IndexForm(request.GET)
         if form.is_valid():
-            val = URLValidator()
             try:
-                url = request.GET['url']
-                if not url.startswith('http'):
-                    url = 'http://' + url
-                val(url)
-            except ValidationError:
+                url = _normalize_discovery_url(request.GET['url'])
+            except ValueError:
                 form.add_error('url', 'Invalid url')
             else:
                 # The redirect target is always this site's setup page; the
@@ -109,17 +90,84 @@ def index(request):
 def contact(request):
     return render(request, 'frontend/contact.html')
 
+class _BadRequest(Exception):
+    def __init__(self, message, captcha=False):
+        super().__init__(message)
+        self.message = message
+        self.captcha = captcha
+
+
+class _SetupDenied(Exception):
+    pass
+
+
+def _normalize_setup_url(raw_url):
+    """Return a validated, public http(s) URL or raise _BadRequest."""
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise _BadRequest('Url is required')
+    try:
+        url = _normalize_discovery_url(raw_url)
+    except ValueError as exc:
+        raise _BadRequest('Invalid url') from exc
+
+    if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
+        from pol.reader.errors import InvalidURLError
+        from pol.reader.safety import assert_public_url
+        try:
+            assert_public_url(url)
+        except InvalidURLError as exc:
+            raise _BadRequest('This URL is not allowed.') from exc
+    return url
+
+
+def _setup_target(request):
+    feed_id = request.GET.get('feed_id')
+    feed = None
+    if feed_id:
+        if not str(feed_id).isdigit():
+            raise _BadRequest('Invalid feed id')
+        feed = get_object_or_404(Feed, pk=feed_id)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            raise _SetupDenied()
+        raw_url = feed.uri
+    else:
+        raw_url = request.GET.get('url', '')
+
+    url = _normalize_setup_url(raw_url)
+    return feed, url
+
+
 @ensure_csrf_cookie
 def setup(request):
-    if request.method == 'GET' and 'url' in request.GET:
-        external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(request.GET['url'], safe='')
-        return render(request, 'frontend/setup.html',
-                        {
-                            'external_page_url': external_page_url,
-                            'page_url': request.GET['url']
-                        })
+    if request.method != 'GET':
+        return HttpResponseBadRequest('Only GET method supported')
+    try:
+        feed, url = _setup_target(request)
+    except _SetupDenied:
+        return _deny_feed_access(request)
+    except _BadRequest as exc:
+        return HttpResponseBadRequest(exc.message, content_type='text/plain')
 
-    return HttpResponseBadRequest('Url is required')
+    setup_initial = None
+    if feed:
+        item_xpathes = {
+            feed_field.field.name: feed_field.xpath
+            for feed_field in feed.feedfield_set.select_related('field')
+        }
+        setup_initial = {
+            'feed_id': feed.id,
+            'selectors': [feed.xpath, item_xpathes],
+        }
+
+    external_page_url = DOWNLOADER_PAGE_URL + urllib.parse.quote(url, safe='')
+    return render(request, 'frontend/setup.html',
+                  {
+                      'external_page_url': external_page_url,
+                      'page_url': url,
+                      'feed_id': feed.id if feed else None,
+                      'setup_initial': setup_initial,
+                  })
+
 
 def _validate_html(html):
 
@@ -198,7 +246,7 @@ def _get_date_xpath(date_xpath):
             ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
-def _create_feed(request, url, xpathes, edited=False):
+def _save_feed_fields(feed, xpathes, edited):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
 
@@ -207,34 +255,128 @@ def _create_feed(request, url, xpathes, edited=False):
     by_name = {by_id[field_id].name: value
                for field_id, value in item_xpathes.items() if field_id in by_id}
 
+    feed.xpath = feed_xpath
+    feed.edited = edited
+    feed.save()
+
+    for field in fields:
+        if field.name == 'link' and 'title' in by_name and not edited:
+            xpath = _get_link_xpath(by_name['title'][0])
+        elif field.name == 'image' and 'image' in by_name and not edited:
+            xpath = _get_image_xpath(by_name['image'][0])
+        elif field.name == 'date' and 'date' in by_name and not edited:
+            xpath = _get_date_xpath(by_name['date'][0])
+        elif field.id in item_xpathes:
+            xpath = item_xpathes[field.id][0]
+        else:
+            xpath = ''
+
+        existing = FeedField.objects.filter(feed=feed, field=field).first()
+        if xpath:
+            if existing:
+                existing.xpath = xpath
+                existing.save(update_fields=['xpath'])
+            else:
+                FeedField.objects.create(feed=feed, field=field, xpath=xpath)
+        elif existing:
+            existing.delete()
+
+
+def _duplicate_key(url):
+    """Normalize a feed URL for duplicate detection.
+
+    Fragments never reach the origin and a bare host is the same page as its
+    root path, so both are folded into one key.
+    """
+    normalized = _normalize_discovery_url(url)
+    parts = urllib.parse.urlsplit(normalized)
+    return urllib.parse.urlunsplit((
+        parts.scheme, parts.netloc, parts.path or '/', parts.query, ''))
+
+
+def _same_feed_url(left, right):
+    try:
+        return _duplicate_key(left) == _duplicate_key(right)
+    except ValueError:
+        return left == right
+
+
+def _find_duplicate_feed(request, url, exclude_id=None):
+    try:
+        normalized = _duplicate_key(url)
+    except ValueError:
+        return None
+    feeds = _feeds_for_request(request)
+    if exclude_id is not None:
+        feeds = feeds.exclude(pk=exclude_id)
+    for feed in feeds.only('id', 'uri'):
+        try:
+            if _duplicate_key(feed.uri) == normalized:
+                return feed
+        except ValueError:
+            continue
+    return None
+
+
+def _create_feed(request, url, xpathes, edited=False):
+    duplicate = _find_duplicate_feed(request, url)
+    if duplicate is not None:
+        return duplicate.id, True
+
     with transaction.atomic():
-        feed = Feed(uri=url, xpath=feed_xpath, edited=edited,
+        feed = Feed(uri=url, xpath=xpathes[0], edited=edited,
                     **_feed_owner_kwargs(request))
         feed.save()
+        _save_feed_fields(feed, xpathes, edited)
 
-        for field in fields:
-            if field.name == 'link' and 'title' in by_name and not edited:
-                xpath = _get_link_xpath(by_name['title'][0])
-            elif field.name == 'image' and 'image' in by_name and not edited:
-                xpath = _get_image_xpath(by_name['image'][0])
-            elif field.name == 'date' and 'date' in by_name and not edited:
-                xpath = _get_date_xpath(by_name['date'][0])
-            elif field.id in item_xpathes:
-                xpath = item_xpathes[field.id][0]
-            else:
-                continue
-            FeedField(feed=feed, field=field, xpath=xpath).save()
+    return feed.id, False
 
-    return feed.id
+
+def _update_feed(request, feed, url, xpathes, edited=True):
+    if not _same_feed_url(feed.uri, url):
+        duplicate = _find_duplicate_feed(request, url, exclude_id=feed.id)
+        if duplicate is not None:
+            return duplicate.id, True
+
+    with transaction.atomic():
+        feed = get_object_or_404(
+            Feed.objects.select_for_update(), pk=feed.pk)
+        if not _can_manage(request, feed, allow_legacy_claim=True):
+            return None, False
+
+        if request.user.is_authenticated and feed.owner_id is None:
+            feed.owner = request.user
+            feed.session_key = ''
+        feed.uri = url
+        feed.save()
+        _save_feed_fields(feed, xpathes, edited)
+
+    return feed.id, False
+
+
+def _feed_for_update(payload):
+    feed_id = payload.get('feed_id')
+    if not feed_id:
+        return None
+    if not str(feed_id).isdigit():
+        raise ValueError('Invalid feed id')
+    return get_object_or_404(Feed, pk=feed_id)
+
 
 def setup_create_feed(request):
     if request.method == 'POST':
-        obj = json.loads(request.body)
+        try:
+            obj = json.loads(request.body)
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest('Invalid JSON body')
         if 'html' not in obj or 'names' not in obj or 'url' not in obj:
             return HttpResponseBadRequest('"html", "names" and "url" parameters are required')
         html_json = obj['html']
         item_names = obj['names']
-        url = obj['url']
+        try:
+            url = _normalize_setup_url(obj['url'])
+        except _BadRequest as exc:
+            return HttpResponseBadRequest(exc.message, content_type='text/plain')
 
         if not _validate_html(html_json):
             return HttpResponseBadRequest('html is invalid')
@@ -249,40 +391,51 @@ def setup_create_feed(request):
             field_xpathes[field.id] = [xpathes[1][field.name], required]
         xpathes[1] = field_xpathes
 
-        feed_id = _create_feed(request, url, xpathes)
+        if not xpathes[0].strip() or not field_xpathes:
+            return HttpResponseBadRequest('Select at least one field.')
 
-        return HttpResponse(reverse('preview', args=(feed_id,)))
+        try:
+            feed = _feed_for_update(obj)
+        except ValueError:
+            return HttpResponseBadRequest('Invalid feed id')
+
+        duplicate = False
+        if feed:
+            feed_id, duplicate = _update_feed(
+                request, feed, url, xpathes, edited=False)
+            if feed_id is None:
+                return _deny_feed_access(request)
+        else:
+            feed_id, duplicate = _create_feed(request, url, xpathes)
+
+        preview_url = reverse('preview', args=(feed_id,))
+        if duplicate:
+            preview_url += '?duplicate=1'
+        return HttpResponse(preview_url, content_type='text/plain')
 
 def _validate_selectors(selectors):
     if not isinstance(selectors, list) or len(selectors) != 2:
         return False
-    feed_xpath = selectors[0]
-    item_xpathes = selectors[1]
-
-    if not isinstance(feed_xpath, str):
+    feed_xpath, item_xpathes = selectors
+    if not isinstance(feed_xpath, str) or not isinstance(item_xpathes, dict):
         return False
-    if not isinstance(item_xpathes, dict):
+    if not feed_xpath.strip() or not item_xpathes:
         return False
 
     fields = list(Field.objects.all())
     by_name = {field.name: field for field in fields}
     by_id = {field.id: field for field in fields}
 
-    item_xpathes_out = {}
-
+    result = {}
     for key, xpath in item_xpathes.items():
         field = by_name.get(key)
-        if field is None:
-            try:
-                field = by_id.get(int(key))
-            except (TypeError, ValueError):
-                field = None
-        if field is None:
-            continue
-        if not isinstance(xpath, str):
+        if field is None and str(key).isdigit():
+            field = by_id.get(int(key))
+        if field is None or not isinstance(xpath, str):
             return False
-        item_xpathes_out[field.id] = [xpath, field.required]
-    return [feed_xpath, item_xpathes_out]
+        result[field.id] = [xpath, field.required]
+
+    return [feed_xpath, result]
 
 
 def _name_field_results(messages, posts):
@@ -319,34 +472,62 @@ def setup_validate_selectors(request):
 
         return HttpResponse(json.dumps({'success': success, 'messages': messages, 'posts': posts}))
 
+def _setup_ext_payload(request):
+    try:
+        obj = json.loads(request.body)
+    except (TypeError, ValueError) as exc:
+        raise _BadRequest('Invalid JSON body') from exc
+    if 'selectors' not in obj or 'snapshot_time' not in obj or 'url' not in obj:
+        raise _BadRequest(
+            '"selectors", "snapshot_time" and "url" are required')
+    file_name = obj['snapshot_time']
+    if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
+        raise _BadRequest('"snapshot_time" is invalid')
+    selectors = _validate_selectors(obj['selectors'])
+    if not selectors:
+        raise _BadRequest('selectors are invalid')
+    return obj, selectors, file_name
+
+
 def setup_create_feed_ext(request):
     from .setup_tool_ext import build_xpath_results
 
-    if request.method == 'POST':
-        obj = json.loads(request.body)
-        if 'selectors' not in obj or 'snapshot_time' not in obj or 'url' not in obj:
-            return HttpResponseBadRequest('"selectors", "snapshot_time" and "url" are required')
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
 
-        selectors = obj['selectors']
-        file_name = obj['snapshot_time']
-
-        if not re.match(r'^\d{10}\.\d+_[\da-f]{32,64}\Z', file_name):
-            return HttpResponseBadRequest('"snapshot_time" is invalid')
-
-        validated_selectors = _validate_selectors(selectors)
-
-        if not validated_selectors:
-            return HttpResponseBadRequest('selectors are invalid')
-
-        messages, posts, success = build_xpath_results(validated_selectors, file_name)
+    try:
+        obj, selectors, file_name = _setup_ext_payload(request)
+        url = _normalize_setup_url(obj['url'])
+        messages, posts, success = build_xpath_results(selectors, file_name)
         messages, posts = _name_field_results(messages, posts)
+        if not success:
+            return HttpResponse(
+                json.dumps({'success': False, 'messages': messages}),
+                content_type='application/json')
 
-        if success:
-            url = obj['url']
-            feed_id = _create_feed(request, url, validated_selectors, True)
-            return HttpResponse(json.dumps({'success': True, 'url': reverse('preview', args=(feed_id,))}))
+        feed = _feed_for_update(obj)
+        duplicate = False
+        if feed:
+            feed_id, duplicate = _update_feed(
+                request, feed, url, selectors, True)
+            if feed_id is None:
+                raise _SetupDenied()
         else:
-            return HttpResponse(json.dumps({'success': False, 'messages': messages}))
+            feed_id, duplicate = _create_feed(
+                request, url, selectors, True)
+        preview_url = reverse('preview', args=(feed_id,))
+        if duplicate:
+            preview_url += '?duplicate=1'
+        return HttpResponse(
+            json.dumps({'success': True, 'url': preview_url}),
+            content_type='application/json')
+    except _BadRequest as exc:
+        return HttpResponseBadRequest(exc.message, content_type='text/plain')
+    except ValueError:
+        return HttpResponseBadRequest('Invalid feed id')
+    except _SetupDenied:
+        return _deny_feed_access(request)
+
 
 def preview(request, feed_id):
     if request.method != 'GET':
@@ -358,20 +539,52 @@ def preview(request, feed_id):
                   {
                       'feed_url': FEED_PAGE_URL + feed_id,
                       'feed_id': feed_id,
+                      'duplicate': request.GET.get('duplicate'),
                   })
 
 
-def myfeeds(request):
+def _feeds_for_request(request):
     if request.user.is_authenticated:
-        feeds = Feed.objects.filter(owner=request.user)
-    elif request.session.session_key:
-        feeds = Feed.objects.filter(
+        return Feed.objects.filter(owner=request.user)
+    if request.session.session_key:
+        return Feed.objects.filter(
             owner__isnull=True, session_key=request.session.session_key)
-    else:
-        feeds = Feed.objects.none()
+    return Feed.objects.none()
 
-    feeds = feeds.annotate(field_count=Count('feedfield')).order_by('-created')
-    return render(request, 'frontend/myfeeds.html', {'feeds': feeds})
+
+def myfeeds(request):
+    feeds = list(_feeds_for_request(request).annotate(
+        field_count=Count('feedfield')).order_by('-created'))
+    keys = {}
+    for feed in feeds:
+        try:
+            key = _duplicate_key(feed.uri)
+        except ValueError:
+            key = feed.uri
+        feed.duplicate_key = key
+        keys[key] = keys.get(key, 0) + 1
+    for feed in feeds:
+        feed.duplicate = keys[feed.duplicate_key] > 1
+    return render(request, 'frontend/myfeeds.html',
+                  {'feeds': feeds, 'feed_page_url': FEED_PAGE_URL})
+
+
+def myfeeds_opml(request):
+    feeds = _feeds_for_request(request).order_by('id')
+
+    opml = etree.Element('opml', version='2.0')
+    head = etree.SubElement(opml, 'head')
+    etree.SubElement(head, 'title').text = 'Polite Pol feeds'
+    body = etree.SubElement(opml, 'body')
+    group = etree.SubElement(body, 'outline', text='Polite Pol', title='Polite Pol')
+    for feed in feeds:
+        etree.SubElement(
+            group, 'outline', type='rss', text=feed.uri, title=feed.uri,
+            xmlUrl=request.build_absolute_uri(FEED_PAGE_URL + str(feed.id)),
+            htmlUrl=feed.uri)
+
+    payload = etree.tostring(opml, encoding='utf-8', xml_declaration=True)
+    return HttpResponse(payload, content_type='text/x-opml; charset=utf-8')
 
 
 def edit_feed(request, feed_id):
@@ -381,34 +594,48 @@ def edit_feed(request, feed_id):
     if request.method == 'POST':
         form = FeedEditForm(request.POST, fields=fields)
         if form.is_valid():
-            with transaction.atomic():
-                # Reload under a row lock so two concurrent claims cannot both
-                # pass the permission check and overwrite each other.
-                feed = get_object_or_404(
-                    Feed.objects.select_for_update(), pk=feed_id)
-                if not _can_manage(request, feed, allow_legacy_claim=True):
-                    return _deny_feed_access(request)
+            if not _can_manage(request, feed, allow_legacy_claim=True):
+                return _deny_feed_access(request)
 
-                if request.user.is_authenticated and feed.owner_id is None:
-                    feed.owner = request.user
-                    feed.session_key = ''
-                feed.uri = form.cleaned_data['uri']
-                feed.xpath = form.cleaned_data['feed_xpath']
-                feed.edited = True
-                feed.save()
+            duplicate = None
+            if not _same_feed_url(feed.uri, form.cleaned_data['uri']):
+                duplicate = _find_duplicate_feed(
+                    request, form.cleaned_data['uri'], exclude_id=feed.id)
+            if duplicate is not None:
+                form.add_error(
+                    'uri', _('You already have a feed for this page.'))
+            else:
+                with transaction.atomic():
+                    # Reload under a row lock so two concurrent claims cannot
+                    # both pass the permission check and overwrite each other.
+                    feed = get_object_or_404(
+                        Feed.objects.select_for_update(), pk=feed_id)
+                    if not _can_manage(request, feed, allow_legacy_claim=True):
+                        return _deny_feed_access(request)
 
-                for field in fields:
-                    xpath = form.cleaned_data.get('xpath_%s' % field.name, '').strip()
-                    existing = FeedField.objects.filter(feed=feed, field=field).first()
-                    if xpath:
-                        if existing:
-                            existing.xpath = xpath
-                            existing.save(update_fields=['xpath'])
-                        else:
-                            FeedField.objects.create(feed=feed, field=field, xpath=xpath)
-                    elif existing:
-                        existing.delete()
-            return redirect('preview', feed.id)
+                    if request.user.is_authenticated and feed.owner_id is None:
+                        feed.owner = request.user
+                        feed.session_key = ''
+                    feed.uri = form.cleaned_data['uri']
+                    feed.xpath = form.cleaned_data['feed_xpath']
+                    feed.edited = True
+                    feed.save()
+
+                    for field in fields:
+                        xpath = form.cleaned_data.get(
+                            'xpath_%s' % field.name, '').strip()
+                        existing = FeedField.objects.filter(
+                            feed=feed, field=field).first()
+                        if xpath:
+                            if existing:
+                                existing.xpath = xpath
+                                existing.save(update_fields=['xpath'])
+                            else:
+                                FeedField.objects.create(
+                                    feed=feed, field=field, xpath=xpath)
+                        elif existing:
+                            existing.delete()
+                return redirect('preview', feed.id)
         if not _can_manage(request, feed, allow_legacy_claim=True):
             return _deny_feed_access(request)
     else:
@@ -481,28 +708,70 @@ def logout_view(request):
     return redirect('index')
 
 
-def discover(request):
-    """Proxy feed discovery to the downloader (used by the index page and dev)."""
-    url = (request.GET.get('url') or '').strip()
-    if not url:
-        return HttpResponseBadRequest('Url is required')
-    try:
-        url = _normalize_discovery_url(url)
-    except ValueError:
-        return HttpResponseBadRequest('Invalid url')
+def _json_error(message, status=400, captcha=False):
+    payload = {'error': message}
+    if captcha:
+        payload['captcha'] = True
+    return HttpResponse(json.dumps(payload), status=status,
+                        content_type='application/json')
 
-    if not url.lower().startswith(('http://', 'https://')):
-        return HttpResponseBadRequest('Invalid url')
+
+def _request_payload(request):
+    if request.method != 'POST':
+        return request.GET
+    if 'application/json' in (request.content_type or ''):
+        try:
+            payload = json.loads(request.body or b'{}')
+        except (TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+    return request.POST
+
+
+def _discover_url(payload):
+    raw_url = payload.get('url')
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise _BadRequest('Url is required')
+    try:
+        url = _normalize_discovery_url(raw_url.strip())
+    except ValueError as exc:
+        raise _BadRequest('Invalid url') from exc
+    form_data = payload.copy()
+    form_data['url'] = url
+    form = IndexForm(form_data)
+    if not form.is_valid():
+        if form.errors.get('captcha'):
+            raise _BadRequest(str(form.errors['captcha'][0]), captcha=True)
+        raise _BadRequest('Invalid url')
+    return url
+
+
+def _bad_request_response(exc):
+    if exc.captcha:
+        return _json_error(exc.message, captcha=True)
+    return HttpResponseBadRequest(exc.message, content_type='text/plain')
+
+
+def discover(request):
+    """Proxy feed discovery to the downloader after a captcha check."""
+    if request.method not in ('GET', 'POST'):
+        return HttpResponseNotAllowed(['GET', 'POST'])
+    payload = _request_payload(request)
+    if payload is None:
+        return HttpResponseBadRequest('Invalid JSON body')
+    try:
+        url = _discover_url(payload)
+    except _BadRequest as exc:
+        return _bad_request_response(exc)
 
     target = DOWNLOADER_BASE_URL.rstrip('/') + '/discover?' + urllib.parse.urlencode({'url': url})
     try:
         with urllib.request.urlopen(target, timeout=35) as response:  # nosec B310
-            payload = response.read()
+            body = response.read()
             status = response.status
     except urllib.error.HTTPError as exc:
         return HttpResponse(exc.read(), status=exc.code,
                             content_type='application/json')
-    except Exception:
-        return HttpResponse(json.dumps({'error': 'Feed discovery failed'}),
-                            status=502, content_type='application/json')
-    return HttpResponse(payload, status=status, content_type='application/json')
+    except (urllib.error.URLError, OSError, ValueError):
+        return _json_error('Feed discovery failed', status=502)
+    return HttpResponse(body, status=status, content_type='application/json')

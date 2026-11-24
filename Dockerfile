@@ -45,7 +45,8 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-RUN cp frontend/frontend/settings.py.example frontend/frontend/settings.py \
+RUN chmod -R a+rX /app \
+    && cp frontend/frontend/settings.py.example frontend/frontend/settings.py \
     && chmod +x frontend/start.sh wait-for-it.sh \
     && python frontend/manage.py collectstatic --noinput
 

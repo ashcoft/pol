@@ -16,13 +16,24 @@
   {% endif %}
 
   {% for field in form %}
-    <div class="control-group{% if field.errors %} error{% endif %}">
-      <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-      <div class="controls">
-        {{ field }}
-        {% if field.errors %}<span class="help-inline">{{ field.errors|striptags }}</span>{% endif %}
+    {% if field.name == 'captcha' %}
+      <div class="control-group cap-center{% if field.errors %} error{% endif %}">
+        <span class="control-label">{{ field.label }}</span>
+        <div class="controls">
+          {{ field }}
+          <span class="help-block">{% trans "Complete the verification below." %}</span>
+          {% if field.errors %}<span class="help-inline">{{ field.errors|striptags }}</span>{% endif %}
+        </div>
       </div>
-    </div>
+    {% else %}
+      <div class="control-group{% if field.errors %} error{% endif %}">
+        <label class="control-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        <div class="controls">
+          {{ field }}
+          {% if field.errors %}<span class="help-inline">{{ field.errors|striptags }}</span>{% endif %}
+        </div>
+      </div>
+    {% endif %}
   {% endfor %}
 
   <input type="hidden" name="next" value="{{ next }}">
