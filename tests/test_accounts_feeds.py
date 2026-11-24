@@ -722,33 +722,3 @@ def test_setup_login_redirect_keeps_query_string(cleanup):
     location = response['Location']
     assert 'feed_id=%s' % feed.id in urllib.parse.unquote(location)
 
-
-def test_clicker_update_preserves_unselected_fields(cleanup):
-    owner = User.objects.create_user('test_owner', password=PASSWORD)
-    feed = _make_feed(owner=owner)
-
-    html = [
-        'html', {'tag-id': 1}, [
-            ['body', {'tag-id': 2}, [
-                ['article', {'tag-id': 3}, [
-                    ['h1', {'tag-id': 4}, []],
-                ]],
-            ]],
-        ],
-    ]
-    client = Client()
-    client.force_login(owner)
-    response = client.post(
-        '/setup_create_feed',
-        data=json.dumps({
-            'html': html,
-            'names': {'title': 4},
-            'url': TEST_URI + 'page',
-            'feed_id': feed.id,
-        }),
-        content_type='application/json')
-    assert response.status_code == 200
-    assert FeedField.objects.filter(
-        feed=feed, field__name='title').exists()
-    assert FeedField.objects.filter(
-        feed=feed, field__name='description').exists()

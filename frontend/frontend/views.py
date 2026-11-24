@@ -246,7 +246,7 @@ def _get_date_xpath(date_xpath):
             ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
-def _save_feed_fields(feed, xpathes, edited, preserve_missing=False):
+def _save_feed_fields(feed, xpathes, edited):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
 
@@ -278,7 +278,7 @@ def _save_feed_fields(feed, xpathes, edited, preserve_missing=False):
                 existing.save(update_fields=['xpath'])
             else:
                 FeedField.objects.create(feed=feed, field=field, xpath=xpath)
-        elif existing and not preserve_missing:
+        elif existing:
             existing.delete()
 
 
@@ -349,8 +349,7 @@ def _update_feed(request, feed, url, xpathes, edited=True):
             feed.session_key = ''
         feed.uri = url
         feed.save()
-        _save_feed_fields(
-            feed, xpathes, edited, preserve_missing=not edited)
+        _save_feed_fields(feed, xpathes, edited)
 
     return feed.id, False
 
