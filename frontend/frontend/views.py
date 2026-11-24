@@ -713,7 +713,7 @@ def _discover_url(payload):
 def _bad_request_response(exc):
     if exc.captcha:
         return _json_error(exc.message, captcha=True)
-    return HttpResponseBadRequest(exc.message)
+    return HttpResponseBadRequest(exc.message, content_type='text/plain')
 
 
 def discover(request):
