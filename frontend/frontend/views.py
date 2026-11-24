@@ -3,7 +3,8 @@ import urllib.parse
 import urllib.request
 import json
 import re
-import xml.etree.ElementTree as ET
+
+from lxml import etree
 
 from django.contrib.auth import login as auth_login, logout as auth_logout
 from django.conf import settings as django_settings
@@ -141,7 +142,7 @@ def setup(request):
     except _SetupDenied:
         return _deny_feed_access(request)
     except _BadRequest as exc:
-        return HttpResponseBadRequest(exc.message)
+        return HttpResponseBadRequest(exc.message, content_type='text/plain')
 
     setup_initial = None
     if feed:
@@ -377,7 +378,7 @@ def setup_create_feed(request):
         preview_url = reverse('preview', args=(feed_id,))
         if duplicate:
             preview_url += '?duplicate=1'
-        return HttpResponse(preview_url)
+        return HttpResponse(preview_url, content_type='text/plain')
 
 def _validate_selectors(selectors):
     if not isinstance(selectors, list) or len(selectors) != 2:
@@ -466,8 +467,9 @@ def setup_create_feed_ext(request):
         messages, posts, success = build_xpath_results(selectors, file_name)
         messages, posts = _name_field_results(messages, posts)
         if not success:
-            return HttpResponse(json.dumps(
-                {'success': False, 'messages': messages}))
+            return HttpResponse(
+                json.dumps({'success': False, 'messages': messages}),
+                content_type='application/json')
 
         feed = _feed_for_update(obj)
         duplicate = False
@@ -482,12 +484,11 @@ def setup_create_feed_ext(request):
         preview_url = reverse('preview', args=(feed_id,))
         if duplicate:
             preview_url += '?duplicate=1'
-        return HttpResponse(json.dumps({
-            'success': True,
-            'url': preview_url,
-        }))
+        return HttpResponse(
+            json.dumps({'success': True, 'url': preview_url}),
+            content_type='application/json')
     except _BadRequest as exc:
-        return HttpResponseBadRequest(exc.message)
+        return HttpResponseBadRequest(exc.message, content_type='text/plain')
     except ValueError:
         return HttpResponseBadRequest('Invalid feed id')
     except _SetupDenied:
@@ -535,18 +536,18 @@ def myfeeds(request):
 def myfeeds_opml(request):
     feeds = _feeds_for_request(request).order_by('id')
 
-    opml = ET.Element('opml', version='2.0')
-    head = ET.SubElement(opml, 'head')
-    ET.SubElement(head, 'title').text = 'Polite Pol feeds'
-    body = ET.SubElement(opml, 'body')
-    group = ET.SubElement(body, 'outline', text='Polite Pol', title='Polite Pol')
+    opml = etree.Element('opml', version='2.0')
+    head = etree.SubElement(opml, 'head')
+    etree.SubElement(head, 'title').text = 'Polite Pol feeds'
+    body = etree.SubElement(opml, 'body')
+    group = etree.SubElement(body, 'outline', text='Polite Pol', title='Polite Pol')
     for feed in feeds:
-        ET.SubElement(
+        etree.SubElement(
             group, 'outline', type='rss', text=feed.uri, title=feed.uri,
             xmlUrl=request.build_absolute_uri(FEED_PAGE_URL + str(feed.id)),
             htmlUrl=feed.uri)
 
-    payload = ET.tostring(opml, encoding='utf-8', xml_declaration=True)
+    payload = etree.tostring(opml, encoding='utf-8', xml_declaration=True)
     return HttpResponse(payload, content_type='text/x-opml; charset=utf-8')
 
 

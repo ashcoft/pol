@@ -340,10 +340,11 @@
         function setStatus(message, loading) {
             $status.toggleClass('is-loading', Boolean(loading));
             if (loading) {
+                var spinner = document.createElement('span');
+                spinner.className = 'rss-spinner';
+                spinner.setAttribute('aria-hidden', 'true');
                 $status.empty().append(
-                    $('<span>', {'class': 'rss-spinner', 'aria-hidden': 'true'}),
-                    document.createTextNode(' ' + message)
-                );
+                    spinner, document.createTextNode(' ' + message));
             } else {
                 $status.text(message);
             }
@@ -352,13 +353,25 @@
         function showSkeletons() {
             $results.empty();
             for (var i = 0; i < 3; i++) {
-                $results.append(
-                    '<li class="feed-result feed-result-skeleton" aria-hidden="true">' +
-                    '<span class="skeleton-favicon"></span>' +
-                    '<span class="skeleton-lines">' +
-                    '<span class="skeleton-line"></span>' +
-                    '<span class="skeleton-line short"></span>' +
-                    '</span></li>');
+                var item = document.createElement('li');
+                item.className = 'feed-result feed-result-skeleton';
+                item.setAttribute('aria-hidden', 'true');
+
+                var favicon = document.createElement('span');
+                favicon.className = 'skeleton-favicon';
+
+                var lines = document.createElement('span');
+                lines.className = 'skeleton-lines';
+                var line = document.createElement('span');
+                line.className = 'skeleton-line';
+                var shortLine = document.createElement('span');
+                shortLine.className = 'skeleton-line short';
+                lines.appendChild(line);
+                lines.appendChild(shortLine);
+
+                item.appendChild(favicon);
+                item.appendChild(lines);
+                $results.append(item);
             }
         }
 

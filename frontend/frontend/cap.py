@@ -9,14 +9,15 @@ from django import forms
 from django.conf import settings
 from django.templatetags.static import static
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
+
+CAP_TEST_ANSWER = 'passed'
 
 
 def verify(token):
     """Verify a Cap token with the self-hosted capd server."""
     if getattr(settings, 'CAP_TEST_MODE', False):
-        return token == 'passed'
+        return token == CAP_TEST_ANSWER
     if not token or not settings.CAP_SITE_KEY or not settings.CAP_SECRET:
         return False
 
@@ -50,8 +51,9 @@ class CapWidget(forms.Widget):
     def render(self, name, value, attrs=None, renderer=None):
         """Render the Cap widget or the test-mode token input."""
         if getattr(settings, 'CAP_TEST_MODE', False):
-            return mark_safe(
-                '<input type="hidden" name="cap-token" value="passed">')
+            return format_html(
+                '<input type="hidden" name="cap-token" value="{}">',
+                CAP_TEST_ANSWER)
         endpoint = (
             f'{settings.CAP_PUBLIC_URL.rstrip("/")}/'
             f'{settings.CAP_SITE_KEY}/'

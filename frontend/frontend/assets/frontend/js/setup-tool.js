@@ -276,6 +276,7 @@ window.getCookie = getCookie;
 
 // html2json [tag_name, {attributes_dict}, [children]]
 var iframeHtmlJson = null;
+var snapshot_time = null;
 
 function gatherSelectedTagIds(name_ids) {
     var selected_any = false;
@@ -440,6 +441,7 @@ function onCreateButtonClick() {
 
 function createFeed() {
     var selectors = null;
+    var selected_any;
     if (ET.active()) {
         selectors = ET.getUIConfig();
         selected_any = Boolean(selectors[0].trim() && Object.keys(selectors[1]).length);
