@@ -62,7 +62,7 @@ services:
     container_name: cap
     restart: unless-stopped
     environment:
-      ADMIN_KEY: '${CAP_ADMIN_KEY:-change-me-cap-admin}'
+      ADMIN_KEY: '${CAP_ADMIN_KEY:?Set CAP_ADMIN_KEY in .env}'
       VALKEY_URL: 'redis://valkey:6379'
     volumes:
       - cap-data:/usr/src/app/data

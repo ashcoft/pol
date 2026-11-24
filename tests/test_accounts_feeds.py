@@ -7,6 +7,7 @@ local environments with a prepared database.
 
 import json
 import os
+import urllib.parse
 
 import pytest
 
@@ -644,3 +645,110 @@ def test_login_page_renders_captcha(cleanup):
     assert response.status_code == 200
     assert b'cap-widget' in response.content
     assert b'data-cap-api-endpoint="https://cap.example/site/"' in response.content
+
+
+def test_setup_rejects_empty_url(cleanup):
+    html = ['html', {'tag-id': 1}, [['body', {'tag-id': 2}, []]]]
+    client = Client()
+    response = client.post(
+        '/setup_create_feed',
+        data=json.dumps({
+            'html': html,
+            'names': {'title': 1},
+            'url': '',
+        }),
+        content_type='application/json')
+    assert response.status_code == 400
+    assert not Feed.objects.filter(uri='').exists()
+
+
+@override_settings(READER_ALLOW_PRIVATE=False)
+def test_setup_rejects_private_url(cleanup):
+    html = ['html', {'tag-id': 1}, [['body', {'tag-id': 2}, []]]]
+    client = Client()
+    response = client.post(
+        '/setup_create_feed',
+        data=json.dumps({
+            'html': html,
+            'names': {'title': 1},
+            'url': 'http://127.0.0.1/private',
+        }),
+        content_type='application/json')
+    assert response.status_code == 400
+    assert not Feed.objects.filter(uri__contains='127.0.0.1').exists()
+
+
+def test_setup_edit_saves_when_url_matches_existing_duplicate(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    first = _make_feed(owner=owner)
+    second = Feed.objects.create(
+        uri=TEST_URI + 'page', xpath='//article', owner=owner)
+
+    html = [
+        'html', {'tag-id': 1}, [
+            ['body', {'tag-id': 2}, [
+                ['article', {'tag-id': 3}, [
+                    ['h1', {'tag-id': 4}, []],
+                    ['p', {'tag-id': 5}, []],
+                ]],
+            ]],
+        ],
+    ]
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/setup_create_feed',
+        data=json.dumps({
+            'html': html,
+            'names': {'title': 4, 'description': 5},
+            'url': TEST_URI + 'page',
+            'feed_id': second.id,
+        }),
+        content_type='application/json')
+    assert response.status_code == 200
+    assert response.content.decode().endswith('/en/preview/%s' % second.id)
+    assert Feed.objects.filter(owner=owner).count() == 2
+    assert FeedField.objects.filter(
+        feed=second, field__name='title').exists()
+    assert first.id != second.id
+
+
+def test_setup_login_redirect_keeps_query_string(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    response = Client().get('/en/setup?feed_id=%s' % feed.id)
+    assert response.status_code == 302
+    location = response['Location']
+    assert 'feed_id=%s' % feed.id in urllib.parse.unquote(location)
+
+
+def test_clicker_update_preserves_unselected_fields(cleanup):
+    owner = User.objects.create_user('test_owner', password=PASSWORD)
+    feed = _make_feed(owner=owner)
+
+    html = [
+        'html', {'tag-id': 1}, [
+            ['body', {'tag-id': 2}, [
+                ['article', {'tag-id': 3}, [
+                    ['h1', {'tag-id': 4}, []],
+                ]],
+            ]],
+        ],
+    ]
+    client = Client()
+    client.force_login(owner)
+    response = client.post(
+        '/setup_create_feed',
+        data=json.dumps({
+            'html': html,
+            'names': {'title': 4},
+            'url': TEST_URI + 'page',
+            'feed_id': feed.id,
+        }),
+        content_type='application/json')
+    assert response.status_code == 200
+    assert FeedField.objects.filter(
+        feed=feed, field__name='title').exists()
+    assert FeedField.objects.filter(
+        feed=feed, field__name='description').exists()

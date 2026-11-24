@@ -1,6 +1,7 @@
 """Cap captcha verification and Django form widget."""
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from typing import ClassVar
@@ -13,22 +14,29 @@ from django.utils.translation import gettext_lazy as _
 
 CAP_TEST_ANSWER = 'passed'
 
+logger = logging.getLogger(__name__)
+
 
 def verify(token):
     """Verify a Cap token with the self-hosted capd server."""
     if getattr(settings, 'CAP_TEST_MODE', False):
         return token == CAP_TEST_ANSWER
-    if not token or not settings.CAP_SITE_KEY or not settings.CAP_SECRET:
+    site_key = getattr(settings, 'CAP_SITE_KEY', '')
+    secret = getattr(settings, 'CAP_SECRET', '')
+    if not site_key or not secret:
+        logger.warning(
+            'CAP_SITE_KEY or CAP_SECRET is not configured; '
+            'captcha verification will fail.')
+        return False
+    if not token:
         return False
 
     payload = json.dumps({
-        'secret': settings.CAP_SECRET,
+        'secret': secret,
         'response': token,
     }).encode('utf-8')
-    url = (
-        f'{settings.CAP_API_URL.rstrip("/")}/'
-        f'{settings.CAP_SITE_KEY}/siteverify'
-    )
+    api_url = getattr(settings, 'CAP_API_URL', 'http://cap:3000')
+    url = f'{api_url.rstrip("/")}/{site_key}/siteverify'
     request = urllib.request.Request(
         url, data=payload,
         headers={'Content-Type': 'application/json'},
@@ -38,7 +46,7 @@ def verify(token):
             data = json.loads(response.read().decode('utf-8'))
     except (urllib.error.URLError, OSError, ValueError):
         return False
-    return data.get('success') is True
+    return isinstance(data, dict) and data.get('success') is True
 
 
 class CapWidget(forms.Widget):
@@ -54,10 +62,9 @@ class CapWidget(forms.Widget):
             return format_html(
                 '<input type="hidden" name="cap-token" value="{}">',
                 CAP_TEST_ANSWER)
-        endpoint = (
-            f'{settings.CAP_PUBLIC_URL.rstrip("/")}/'
-            f'{settings.CAP_SITE_KEY}/'
-        )
+        public_url = getattr(settings, 'CAP_PUBLIC_URL', '')
+        site_key = getattr(settings, 'CAP_SITE_KEY', '')
+        endpoint = f'{public_url.rstrip("/")}/{site_key}/'
         return format_html(
             '<script>window.CAP_CUSTOM_WASM_URL = "{}"; '
             'window.CAP_CUSTOM_HASHWX_URL = "{}";</script>'

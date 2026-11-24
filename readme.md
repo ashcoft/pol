@@ -89,15 +89,24 @@ each path accordingly (see `nginx/default.site-example`):
 The discovery endpoints require a solved Cap token. Load the index page,
 complete the Cap widget, then send its hidden `cap-token` field with the URL.
 Cap is self-hosted: the compose stack runs `capd` and Valkey. Create a site key
-in the capd dashboard (`CAP_PUBLIC_URL`, log in with `CAP_ADMIN_KEY`), then set
-`CAP_SITE_KEY` and `CAP_SECRET` in `.env`. `CAP_PUBLIC_URL` is the browser-facing
-capd origin; `CAP_API_URL` is the server-to-server origin (default
-`http://cap:3000`). `CAP_TEST_MODE` is for the E2E stack only.
+in the capd dashboard (`CAP_PUBLIC_URL`, log in with `CAP_ADMIN_KEY`; Compose
+requires you to set it in `.env`), then set `CAP_SITE_KEY` and `CAP_SECRET` in
+`.env`. `CAP_PUBLIC_URL` is the browser-facing capd origin; `CAP_API_URL` is the
+server-to-server origin (default `http://cap:3000`). `CAP_TEST_MODE` is for the
+E2E stack only. Existing installations must configure these values when they
+upgrade; without a site key and secret, login and discovery stay disabled.
 
 Site keys live in Cap's Valkey volume. If that volume is reset, create a new
 key in the dashboard and update `CAP_SITE_KEY` / `CAP_SECRET`, then recreate
-the app. Behind nginx, set the capd visitor IP header to `X-Forwarded-For` so
-Cap sees the real client IP instead of the proxy's.
+the app. Behind nginx, `nginx/cap.site-example` forwards the client address as
+`X-Forwarded-For`; in the capd dashboard open **Instance settings > Visitor
+location > Your proxy or CDN** and select the proxy option so capd uses that
+header for its per-visitor rate limits.
+
+When Django runs on the host instead of Compose, export `CAP_API_URL`
+(defaults to `http://cap:3000`, so use `http://127.0.0.1:3000`), `CAP_PUBLIC_URL`,
+`CAP_SITE_KEY`, and `CAP_SECRET` in the shell that starts Gunicorn. Editing
+`.env` only affects Compose.
 
 `/read` parameters: `format`, `callback`, `fulltext`/`fill`, `proxy`, `clip`,
 `resolve`, `search`, `order`, `firstlink`, `nolink`, `noref`, `xpath`, `indent`,
@@ -117,7 +126,10 @@ curl 'http://localhost/read?url=https://example.com/feed.xml&format=json&fulltex
 ```
 
 Feed discovery needs a solved Cap token, so use the web interface or submit
-the widget's `cap-token` field explicitly.
+the widget's `cap-token` field explicitly. `POST /api/find-feeds` is also
+protected by Django's CSRF middleware: send the `csrftoken` cookie from the
+index page together with a matching `X-CSRFToken` header (or a
+`csrfmiddlewaretoken` form field).
 
 ## Command line
 
@@ -285,7 +297,7 @@ and must not be used with this compose file.
 ```bash
 git clone https://github.com/ashcoft/pol.git
 cd pol
-cp .env.example .env      # optional; edit the values
+cp .env.example .env      # then set CAP_ADMIN_KEY and the Cap values
 docker compose up -d
 ```
 
@@ -490,6 +502,9 @@ private-host reader flag so the local fixture is reachable:
 POL_READER_ALLOW_PRIVATE=1 python downloader.py 1234
 
 # terminal 2
+# CAP_TEST_MODE=1 makes the widget accept the `passed` token. Test only:
+# never enable it in production.
+CAP_TEST_MODE=1 POL_READER_ALLOW_PRIVATE=1 \
 python -m gunicorn frontend.wsgi:application \
   --pythonpath ./frontend --bind 127.0.0.1:8000
 

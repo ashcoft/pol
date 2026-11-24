@@ -276,7 +276,7 @@ window.getCookie = getCookie;
 
 // html2json [tag_name, {attributes_dict}, [children]]
 var iframeHtmlJson = null;
-var snapshot_time = null;
+window.polSnapshotTime = null;
 
 function gatherSelectedTagIds(name_ids) {
     var selected_any = false;
@@ -414,15 +414,20 @@ function onCreateButtonClick() {
         loader(true);
         createFeed().then(function(data){
             if (ET.active()) {
-                if (typeof data !== 'string') {
-                    loader(false);
-                    return;
+                var res = data;
+                if (typeof res === 'string') {
+                    try {
+                        res = JSON.parse(res);
+                    } catch (err) {
+                        loader(false);
+                        return;
+                    }
                 }
-                var res = JSON.parse(data);
-                if (res.success)
+                if (res && res.success)
                     window.location.href = res.url; // feed_page_url
                 else {
-                    ET.updateUIMessages(res.messages);
+                    if (res && res.messages)
+                        ET.updateUIMessages(res.messages);
                     //unfreez UI
                     loader(false);
                 }
@@ -458,7 +463,7 @@ function createFeed() {
                 type: 'POST',
                 url: ET.active() ? "/setup_create_feed_ext" :"/setup_create_feed",
                 data: JSON.stringify(ET.active()
-                                     ? { selectors: selectors, snapshot_time: snapshot_time, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
+                                     ? { selectors: selectors, snapshot_time: window.polSnapshotTime, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
                                      : { html: iframeHtmlJson, names: name_ids, url:$('#create').data('page-url'), feed_id: $('#create').data('feed-id') }
                                     ),
                 contentType: "application/json; charset=utf-8",
@@ -511,7 +516,7 @@ $(document).ready(function(){
         $('iframe').contents().on('mouseenter mouseleave', '*[tag-id]', onIframeElementHover);
 		var iframe_window = $('iframe')[0].contentWindow;
         iframeHtmlJson = iframe_window.html2json;
-		snapshot_time = iframe_window.snapshot_time;
+		window.polSnapshotTime = iframe_window.snapshot_time;
         loader(false);
     });
 

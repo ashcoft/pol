@@ -194,7 +194,7 @@ function validateSelectors() {
             $.ajax({
                 type: 'POST',
                 url: "/setup_validate_selectors",
-                data: JSON.stringify({ selectors: selectors, snapshot_time: snapshot_time, url:$('#create').data('page-url') }),
+                data: JSON.stringify({ selectors: selectors, snapshot_time: window.polSnapshotTime, url:$('#create').data('page-url') }),
                 contentType: "application/json; charset=utf-8",
                 dataType: "json",
                 headers: {"X-CSRFToken": getCookie('csrftoken')},

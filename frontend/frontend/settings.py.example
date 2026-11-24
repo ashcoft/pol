@@ -226,5 +226,5 @@ CAP_API_URL = os.environ.get('CAP_API_URL', 'http://cap:3000')
 CAP_PUBLIC_URL = os.environ.get('CAP_PUBLIC_URL', '')
 CAP_SITE_KEY = os.environ.get('CAP_SITE_KEY', '')
 CAP_SECRET = os.environ.get('CAP_SECRET', '')
-# Test-only switch: any non-empty token is accepted. Never enable in production.
+# Test-only switch: the token `passed` is accepted. Never enable in production.
 CAP_TEST_MODE = os.environ.get('CAP_TEST_MODE', '0').lower() in ('1', 'true', 'yes', 'on')

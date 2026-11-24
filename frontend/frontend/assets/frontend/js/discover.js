@@ -229,12 +229,12 @@
             if (!url) {
                 return '';
             }
-            if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+            if (!/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(url)) {
                 url = 'https://' + url;
             }
             var match = url.match(/^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([\s\S]*)$/i);
-            if (!match) {
-                return url;
+            if (!match || !/^https?$/i.test(match[1])) {
+                return '';
             }
             var authority = match[2];
             var at = authority.lastIndexOf('@');

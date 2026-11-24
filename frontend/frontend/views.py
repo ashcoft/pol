@@ -56,7 +56,7 @@ def _can_manage(request, feed, allow_legacy_claim=False):
 def _deny_feed_access(request):
     if not request.user.is_authenticated:
         login_url = reverse('login') + '?' + urllib.parse.urlencode(
-            {'next': request.path})
+            {'next': request.get_full_path()})
         return HttpResponseRedirect(login_url)
     raise PermissionDenied(_('You cannot manage this feed.'))
 
@@ -101,6 +101,25 @@ class _SetupDenied(Exception):
     pass
 
 
+def _normalize_setup_url(raw_url):
+    """Return a validated, public http(s) URL or raise _BadRequest."""
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        raise _BadRequest('Url is required')
+    try:
+        url = _normalize_discovery_url(raw_url)
+    except ValueError as exc:
+        raise _BadRequest('Invalid url') from exc
+
+    if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
+        from pol.reader.errors import InvalidURLError
+        from pol.reader.safety import assert_public_url
+        try:
+            assert_public_url(url)
+        except InvalidURLError as exc:
+            raise _BadRequest('This URL is not allowed.') from exc
+    return url
+
+
 def _setup_target(request):
     feed_id = request.GET.get('feed_id')
     feed = None
@@ -114,22 +133,7 @@ def _setup_target(request):
     else:
         raw_url = request.GET.get('url', '')
 
-    if not raw_url:
-        raise _BadRequest('Url is required')
-
-    try:
-        url = _normalize_discovery_url(raw_url)
-    except ValueError as exc:
-        raise _BadRequest('Invalid url') from exc
-
-    if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
-        from pol.reader.errors import InvalidURLError
-        from pol.reader.safety import assert_public_url
-        try:
-            assert_public_url(url)
-        except InvalidURLError as exc:
-            raise _BadRequest('This URL is not allowed.') from exc
-
+    url = _normalize_setup_url(raw_url)
     return feed, url
 
 
@@ -242,7 +246,7 @@ def _get_date_xpath(date_xpath):
             ' | %s[not(@datetime[normalize-space(.)])]/child::node()') % (base, base)
 
 
-def _save_feed_fields(feed, xpathes, edited):
+def _save_feed_fields(feed, xpathes, edited, preserve_missing=False):
     feed_xpath = xpathes[0]
     item_xpathes = xpathes[1]
 
@@ -274,18 +278,40 @@ def _save_feed_fields(feed, xpathes, edited):
                 existing.save(update_fields=['xpath'])
             else:
                 FeedField.objects.create(feed=feed, field=field, xpath=xpath)
-        elif existing:
+        elif existing and not preserve_missing:
             existing.delete()
 
 
-def _find_duplicate_feed(request, url, exclude_id=None):
+def _duplicate_key(url):
+    """Normalize a feed URL for duplicate detection.
+
+    Fragments never reach the origin and a bare host is the same page as its
+    root path, so both are folded into one key.
+    """
     normalized = _normalize_discovery_url(url)
+    parts = urllib.parse.urlsplit(normalized)
+    return urllib.parse.urlunsplit((
+        parts.scheme, parts.netloc, parts.path or '/', parts.query, ''))
+
+
+def _same_feed_url(left, right):
+    try:
+        return _duplicate_key(left) == _duplicate_key(right)
+    except ValueError:
+        return left == right
+
+
+def _find_duplicate_feed(request, url, exclude_id=None):
+    try:
+        normalized = _duplicate_key(url)
+    except ValueError:
+        return None
     feeds = _feeds_for_request(request)
     if exclude_id is not None:
         feeds = feeds.exclude(pk=exclude_id)
     for feed in feeds.only('id', 'uri'):
         try:
-            if _normalize_discovery_url(feed.uri) == normalized:
+            if _duplicate_key(feed.uri) == normalized:
                 return feed
         except ValueError:
             continue
@@ -307,9 +333,10 @@ def _create_feed(request, url, xpathes, edited=False):
 
 
 def _update_feed(request, feed, url, xpathes, edited=True):
-    duplicate = _find_duplicate_feed(request, url, exclude_id=feed.id)
-    if duplicate is not None:
-        return duplicate.id, True
+    if not _same_feed_url(feed.uri, url):
+        duplicate = _find_duplicate_feed(request, url, exclude_id=feed.id)
+        if duplicate is not None:
+            return duplicate.id, True
 
     with transaction.atomic():
         feed = get_object_or_404(
@@ -322,7 +349,8 @@ def _update_feed(request, feed, url, xpathes, edited=True):
             feed.session_key = ''
         feed.uri = url
         feed.save()
-        _save_feed_fields(feed, xpathes, edited)
+        _save_feed_fields(
+            feed, xpathes, edited, preserve_missing=not edited)
 
     return feed.id, False
 
@@ -338,12 +366,18 @@ def _feed_for_update(payload):
 
 def setup_create_feed(request):
     if request.method == 'POST':
-        obj = json.loads(request.body)
+        try:
+            obj = json.loads(request.body)
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest('Invalid JSON body')
         if 'html' not in obj or 'names' not in obj or 'url' not in obj:
             return HttpResponseBadRequest('"html", "names" and "url" parameters are required')
         html_json = obj['html']
         item_names = obj['names']
-        url = obj['url']
+        try:
+            url = _normalize_setup_url(obj['url'])
+        except _BadRequest as exc:
+            return HttpResponseBadRequest(exc.message, content_type='text/plain')
 
         if not _validate_html(html_json):
             return HttpResponseBadRequest('html is invalid')
@@ -464,6 +498,7 @@ def setup_create_feed_ext(request):
 
     try:
         obj, selectors, file_name = _setup_ext_payload(request)
+        url = _normalize_setup_url(obj['url'])
         messages, posts, success = build_xpath_results(selectors, file_name)
         messages, posts = _name_field_results(messages, posts)
         if not success:
@@ -475,12 +510,12 @@ def setup_create_feed_ext(request):
         duplicate = False
         if feed:
             feed_id, duplicate = _update_feed(
-                request, feed, obj['url'], selectors, True)
+                request, feed, url, selectors, True)
             if feed_id is None:
                 raise _SetupDenied()
         else:
             feed_id, duplicate = _create_feed(
-                request, obj['url'], selectors, True)
+                request, url, selectors, True)
         preview_url = reverse('preview', args=(feed_id,))
         if duplicate:
             preview_url += '?duplicate=1'
@@ -521,14 +556,16 @@ def _feeds_for_request(request):
 def myfeeds(request):
     feeds = list(_feeds_for_request(request).annotate(
         field_count=Count('feedfield')).order_by('-created'))
-    seen = set()
+    keys = {}
     for feed in feeds:
         try:
-            key = _normalize_discovery_url(feed.uri)
+            key = _duplicate_key(feed.uri)
         except ValueError:
             key = feed.uri
-        feed.duplicate = key in seen
-        seen.add(key)
+        feed.duplicate_key = key
+        keys[key] = keys.get(key, 0) + 1
+    for feed in feeds:
+        feed.duplicate = keys[feed.duplicate_key] > 1
     return render(request, 'frontend/myfeeds.html',
                   {'feeds': feeds, 'feed_page_url': FEED_PAGE_URL})
 
@@ -561,8 +598,10 @@ def edit_feed(request, feed_id):
             if not _can_manage(request, feed, allow_legacy_claim=True):
                 return _deny_feed_access(request)
 
-            duplicate = _find_duplicate_feed(
-                request, form.cleaned_data['uri'], exclude_id=feed.id)
+            duplicate = None
+            if not _same_feed_url(feed.uri, form.cleaned_data['uri']):
+                duplicate = _find_duplicate_feed(
+                    request, form.cleaned_data['uri'], exclude_id=feed.id)
             if duplicate is not None:
                 form.add_error(
                     'uri', _('You already have a feed for this page.'))
@@ -698,8 +737,6 @@ def _discover_url(payload):
         url = _normalize_discovery_url(raw_url.strip())
     except ValueError as exc:
         raise _BadRequest('Invalid url') from exc
-    if not url.lower().startswith(('http://', 'https://')):
-        raise _BadRequest('Invalid url')
     form_data = payload.copy()
     form_data['url'] = url
     form = IndexForm(form_data)

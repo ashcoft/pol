@@ -14,7 +14,7 @@ import six
 from lxml import etree
 
 from twisted.web import server, resource
-from twisted.internet import reactor, endpoints, defer
+from twisted.internet import reactor, endpoints, defer, threads
 from twisted.web.client import Agent, BrowserLikeRedirectAgent, PartialDownloadError, HTTPConnectionPool
 from twisted.web.server import NOT_DONE_YET
 from twisted.web.http_headers import Headers
@@ -59,6 +59,31 @@ def _http_url(value):
     if parts.scheme.lower() not in ('http', 'https') or not parts.netloc:
         return None
     return value
+
+
+class _GuardedRedirectAgent(BrowserLikeRedirectAgent):
+    """Follow redirects only when the new destination is still public."""
+
+    def __init__(self, agent, allow_private=False, redirectLimit=5):
+        BrowserLikeRedirectAgent.__init__(
+            self, agent, redirectLimit=redirectLimit)
+        self._allow_private = allow_private
+
+    def _handleRedirect(self, response, method, uri, headers, redirectCount):
+        if self._allow_private:
+            return BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount)
+        locations = response.headers.getRawHeaders(b'location', [])
+        if not locations:
+            return BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount)
+        target = _text(self._resolveLocation(uri, locations[0]))
+        d = threads.deferToThread(assert_public_url, target)
+        d.addCallback(
+            lambda _: BrowserLikeRedirectAgent._handleRedirect(
+                self, response, method, uri, headers, redirectCount))
+        return d
+
 
 class Downloader(object):
 
@@ -467,6 +492,27 @@ class Site(resource.Resource):
             return False
         return True
 
+    def _defer_url_check(self, request, url, on_allowed):
+        """Run the blocking DNS check off the reactor thread."""
+        def _allowed(allowed):
+            if allowed:
+                on_allowed()
+                return
+            request.setResponseCode(400)
+            request.write(b'This URL is not allowed.')
+            request.finish()
+
+        def _failed(failure):
+            log.failure('URL safety check failed', failure)
+            if not request.finished:
+                request.setResponseCode(500)
+                request.write(b'Internal error')
+                request.finish()
+
+        d = threads.deferToThread(self._url_allowed, url)
+        d.addCallback(_allowed)
+        d.addErrback(_failed)
+
     def startRequest(self, request, url, feed_config = None, selector_defer=None, sanitize=False):
         if isinstance(url, bytes):
             url = url.decode('utf-8', 'replace')
@@ -481,11 +527,12 @@ class Site(resource.Resource):
             else:
                 downloader.writeResponse(request, sresponse, feed_config)
         else:
-            agent = BrowserLikeRedirectAgent(
+            agent = _GuardedRedirectAgent(
                 Agent(reactor,
                     contextFactory=ScrapyClientContextFactory(), # skip certificate verification
                     connectTimeout=10),
                     #pool=pool),
+                allow_private=self.allow_private,
                 redirectLimit=5
             )
 
@@ -550,11 +597,12 @@ class Site(resource.Resource):
             if not url:
                 request.setResponseCode(400)
                 return b'Url is invalid'
-            if not self._url_allowed(url):
-                request.setResponseCode(400)
-                return b'This URL is not allowed.'
-
-            self.startRequest(request, url, sanitize=True)
+            if self.allow_private:
+                self.startRequest(request, url, sanitize=True)
+                return NOT_DONE_YET
+            self._defer_url_check(
+                request, url,
+                lambda: self.startRequest(request, url, sanitize=True))
             return NOT_DONE_YET
         elif self.feed_regexp.match(request.uri) is not None: # feed
 
@@ -577,10 +625,14 @@ class Site(resource.Resource):
                 if not url:
                     request.setResponseCode(400)
                     return b'Feed URL is invalid'
-                if not self._url_allowed(url):
-                    request.setResponseCode(400)
-                    return b'This URL is not allowed.'
-                self.startRequest(request, url, feed_config, sanitize=sanitize)
+                if self.allow_private:
+                    self.startRequest(
+                        request, url, feed_config, sanitize=sanitize)
+                    return NOT_DONE_YET
+                self._defer_url_check(
+                    request, url,
+                    lambda: self.startRequest(
+                        request, url, feed_config, sanitize=sanitize))
                 return NOT_DONE_YET
         else: # neither page and feed
             return b'Url is invalid'
