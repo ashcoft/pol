@@ -88,7 +88,8 @@ def index(request):
     return render(request, 'frontend/index.html', {'form': form})
 
 def contact(request):
-    return render(request, 'frontend/contact.html')
+    return render(request, 'frontend/contact.html',
+                  {'contact_url': getattr(django_settings, 'CONTACT_URL', '')})
 
 class _BadRequest(Exception):
     def __init__(self, message, captcha=False):
@@ -576,9 +577,9 @@ def myfeeds_opml(request):
 
     opml = etree.Element('opml', version='2.0')
     head = etree.SubElement(opml, 'head')
-    etree.SubElement(head, 'title').text = 'Polite Pol feeds'
+    etree.SubElement(head, 'title').text = 'RSS Finder feeds'
     body = etree.SubElement(opml, 'body')
-    group = etree.SubElement(body, 'outline', text='Polite Pol', title='Polite Pol')
+    group = etree.SubElement(body, 'outline', text='RSS Finder', title='RSS Finder')
     for feed in feeds:
         etree.SubElement(
             group, 'outline', type='rss', text=feed.uri, title=feed.uri,

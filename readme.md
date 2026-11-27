@@ -1,4 +1,4 @@
-# [RSSPol](https://feed.dony.me "RSS Feed Generator")
+# [RSS Finder](https://rss.dony.me "RSS feed generator")
 
 [![Latest Release](https://img.shields.io/github/v/release/ashcoft/pol)](https://github.com/ashcoft/pol/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -12,11 +12,13 @@
 [![Docker publish](https://img.shields.io/github/actions/workflow/status/ashcoft/pol/docker-publish.yml?label=docker)](https://github.com/ashcoft/pol/actions/workflows/docker-publish.yml)
 [![Snyk security](https://snyk.io/test/github/ashcoft/pol/badge.svg)](https://snyk.io/test/github/ashcoft/pol)
 
-RSS feed generator website with user friendly interface.
+RSS Finder turns any web page into an RSS feed, and reads, enriches and
+re-exports feeds you already have.
 
-![PolitePaul](frontend/frontend/assets/frontend/images/apple-touch-icon-144x144-precomposed.png "PolitePaul")
-
-Source code based on [https://github.com/taroved/pol](https://github.com/taroved/pol) of an RSS feed generator website with a user friendly interface: enter a page URL, pick the elements that make up a feed, and get a ready-to-use RSS feed. A live deployment is available at [feed.dony.me](https://feed.dony.me).
+It is a self-hosted generator based on
+[https://github.com/taroved/pol](https://github.com/taroved/pol) (MIT): enter a
+page URL, pick the elements that make up a feed, and get a ready-to-use RSS
+feed. A live deployment is available at [rss.dony.me](https://rss.dony.me).
 
 ## Repository layout
 
@@ -40,7 +42,7 @@ downloader.py
 
 ## Feed reader features
 
-Besides scraping a page into a new feed, pol can read, enrich and re-export
+Besides scraping a page into a new feed, RSS Finder can read, enrich and re-export
 existing feeds:
 
 * Read RSS 0.9x/2.0, Atom 0.3/1.0, RDF (RSS 1.0) and JSON Feed 1.0/1.1.

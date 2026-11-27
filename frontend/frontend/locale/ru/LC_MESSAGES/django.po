@@ -16,8 +16,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
-"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
 #: templates/base.html:12
 msgid "meta_desc"
@@ -34,17 +33,9 @@ msgstr ""
 msgid "contact"
 msgstr "Контакты"
 
-#: templates/base.html:93
-msgid "made_by"
-msgstr "Сделал"
-
-#: templates/base.html:93
-msgid "made_name"
-msgstr "Александр Нестеренко"
-
 #: templates/frontend/contact.html:18
 msgid "contact.title"
-msgstr "Свяжитесь с нами по имэйлу:"
+msgstr "Связаться:"
 
 #: templates/frontend/contact.html:24
 msgid "contact.msg"
@@ -52,11 +43,11 @@ msgstr "Мы ответим как можно скорее"
 
 #: templates/frontend/index.html:5
 msgid "index_title"
-msgstr "PolitePol.com: Создай RSS канал для любой веб-страницы"
+msgstr "RSS Finder: создай RSS канал для любой веб-страницы"
 
 #: templates/frontend/index.html:8 templates/frontend/index.html.py:20
 msgid "brand"
-msgstr "Polite Pol"
+msgstr "RSS Finder"
 
 #: templates/frontend/index.html:15 templates/frontend/index.html.py:16
 #: templates/frontend/index.html:43
@@ -73,7 +64,7 @@ msgstr "Поехали!"
 
 #: templates/frontend/index.html:46
 msgid "help.header"
-msgstr "Видеоурок по созданию RSS ленты:"
+msgstr "Как создать ленту"
 
 #: templates/frontend/preview.html:11
 msgid "subscribe.feed_ready"
@@ -263,8 +254,12 @@ msgstr "Исходная страница:"
 msgid "Field selectors"
 msgstr "Селекторы полей"
 
-msgid "Leave a selector empty to drop that field from the feed. At least one field is required."
-msgstr "Оставьте селектор пустым, чтобы убрать это поле из ленты. Нужно указать хотя бы одно поле."
+msgid ""
+"Leave a selector empty to drop that field from the feed. At least one field "
+"is required."
+msgstr ""
+"Оставьте селектор пустым, чтобы убрать это поле из ленты. Нужно указать хотя"
+" бы одно поле."
 
 msgid "Save changes"
 msgstr "Сохранить изменения"
@@ -304,3 +299,12 @@ msgstr "Вы не можете удалить эту ленту."
 
 msgid "{name} xpath"
 msgstr "Xpath {name}"
+
+msgid "help.body"
+msgstr ""
+"Введите адрес страницы, за которой хотите следить, подтвердите, что вы "
+"человек, и выберите элементы, из которых состоит каждый пост. RSS Finder "
+"соберёт из них ленту, на которую можно подписаться."
+
+msgid "contact.none"
+msgstr "Для этого сайта не настроен контактный адрес."

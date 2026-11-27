@@ -19,7 +19,7 @@ from .errors import FetchError, InvalidURLError
 from .safety import assert_public_url, resolve_addresses
 from .urls import clean_url, normalize_url
 
-DEFAULT_USER_AGENT = 'pol-reader/1.0 (+https://github.com/ashcoft/pol)'
+DEFAULT_USER_AGENT = 'rssfinder/1.0'
 DEFAULT_TIMEOUT = 20
 DEFAULT_MAX_SIZE = 8 * 1024 * 1024
 MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024

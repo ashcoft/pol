@@ -8,7 +8,7 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Polite Pol{% endblock %}</title>
+  <title>{% block title %}RSS Finder{% endblock %}</title>
   <meta name="description" content="{% block meta_desc %}{% trans "meta_desc" %}{% endblock %}" />
   <meta name="keywords" content="{% block meta_keywords %}{% trans "meta_keywords" %}{% endblock %}" />
   <!-- Le HTML5 shim, for IE6-8 support of HTML elements -->
@@ -18,25 +18,8 @@
 
   {% stylesheet 'app' %}
 
-  <!-- For third-generation iPad with high-resolution Retina display: -->
-  <!-- Size should be 144 x 144 pixels -->
-  <link href="{% static 'frontend/images/apple-touch-icon-144x144-precomposed.png' %}" rel="apple-touch-icon-precomposed" type="image/png" sizes="144x144" />
-
-  <!-- For iPhone with high-resolution Retina display: -->
-  <!-- Size should be 114 x 114 pixels -->
-  <link href="{% static 'frontend/images/apple-touch-icon-114x114-precomposed.png' %}" rel="apple-touch-icon-precomposed" type="image/png" sizes="144x144" />
-
-  <!-- For first- and second-generation iPad: -->
-  <!-- Size should be 72 x 72 pixels -->
-  <link href="{% static 'frontend/images/apple-touch-icon-72x72-precomposed.png' %}" rel="apple-touch-icon-precomposed" type="image/png" sizes="72x72" />
-
-  <!-- For non-Retina iPhone, iPod Touch, and Android 2.1+ devices: -->
-  <!-- Size should be 57 x 57 pixels -->
-  <link href="{% static 'frontend/images/apple-touch-icon-precomposed.png' %}" rel="apple-touch-icon-precomposed" type="image/png" />
-
-  <!-- For all other devices -->
-  <!-- Size should be 32 x 32 pixels -->
-  <link href="{% static 'frontend/images/favicon.ico' %}" rel="shortcut icon" />
+  <link href="{% static 'frontend/images/rss-640.png' %}" rel="icon" type="image/png" />
+  <link href="{% static 'frontend/images/rss-640.png' %}" rel="apple-touch-icon" />
   
   {% javascript 'app' %}
   {% block headers %}{% endblock %}
@@ -53,7 +36,7 @@
           <span class="icon-bar"></span>
         </a>
         {% block logo %}
-            <a href="{% url 'index' %}" class="brand-pic"><img src="{% static 'frontend/images/apple-touch-icon-precomposed.png' %}" width="40" height="40" /></a>
+            <a href="{% url 'index' %}" class="brand">{% trans "brand" %}</a>
         {% endblock %}
 
         <div class="container-fluid nav-collapse">
@@ -115,7 +98,7 @@
 </div>
 <div id="footer">
   <div class="container">
-    <p class="credit">Made by <a href="https://github.com/taroved" target="_blank">Alexandr Nesterenko</a> · improved by <a href="https://github.com/ashcoft/" target="_blank" rel="noopener">ashcoft</a></p>
+    <p class="credit">{% trans "brand" %}</p>
   </div>
 </div>
 </body>
