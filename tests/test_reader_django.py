@@ -282,7 +282,7 @@ def test_setup_allows_private_url_when_enabled():
     assert response.status_code == 200
 
 
-@override_settings(**TEST_SETTINGS)
+@override_settings(**TEST_SETTINGS, CONTACT_URL='')
 def test_contact_has_no_vendor_links():
     response = Client().get('/en/contact')
     assert response.status_code == 200

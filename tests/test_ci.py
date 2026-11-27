@@ -68,3 +68,12 @@ def test_snapshot_path_guard_accepts_valid_name(tmp_path, monkeypatch):
     assert posts == []  # no elements match the xpath, so nothing is extracted
     feed_result, field_results = messages
     assert feed_result["count"] == 0
+
+def test_compose_passes_every_app_setting_it_documents():
+    # A settings entry read from the environment is dead in Docker unless the
+    # compose manifests forward it. Keep the two lists in step.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in ('docker-compose.yaml', 'docker-compose.prod.yml'):
+        with open(os.path.join(root, name), encoding='utf-8') as fh:
+            manifest = fh.read()
+        assert "POL_CONTACT_URL: '${POL_CONTACT_URL:-}'" in manifest, name
