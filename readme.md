@@ -479,6 +479,8 @@ workflow. Packages are private by default.
 | App waits for the database and exits | PostgreSQL not ready or wrong credentials | `docker compose logs dbpolitepol`; check `DB_*` in `.env` |
 | `dbpolitepol` exits with "PostgreSQL data in /var/lib/postgresql/data" | Volume created with the old mount | Dump it first if you need the data, then `docker compose down -v` and start fresh |
 | Host nginx returns 502 | App ports not reachable | `docker compose ps`; the app must publish `127.0.0.1:8000` and `127.0.0.1:1234` |
+| `This URL could not be resolved.`, `URL host could not be resolved` from `/read`, or `This URL is not allowed.` for a public site on older versions | The container cannot resolve DNS names, so the private-host check rejects every host name | `docker compose exec politepol python -c "import socket,sys; print(socket.getaddrinfo(sys.argv[1], None))" example.com`, then repeat with the host name from the failing URL; if both fail, give Docker a working resolver (`dns:` on the service, or `dns` in `/etc/docker/daemon.json`) |
+| The RSS finder answers `Not found` and jumps to the feed builder | The host nginx config predates the captcha routes, so `POST /discover` reaches the downloader instead of Django | Add the `/discover` and `= /api/find-feeds` locations from `nginx/default.site-example` to the enabled site file, both proxying to port 8000 (`/api/` stays on 1234); edit the existing file rather than overwriting it, so the TLS lines Certbot added survive, then `sudo nginx -t && sudo systemctl reload nginx` |
 
 ## Tests
 

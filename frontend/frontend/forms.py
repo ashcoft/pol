@@ -95,10 +95,13 @@ class FeedEditForm(forms.Form):
         except ValueError as exc:
             raise forms.ValidationError(_('Invalid URL format')) from exc
         if not getattr(settings, 'READER_ALLOW_PRIVATE', False):
-            from pol.reader.errors import InvalidURLError
+            from pol.reader.errors import InvalidURLError, UnresolvableURLError
             from pol.reader.safety import assert_public_url
             try:
                 assert_public_url(uri)
+            except UnresolvableURLError as exc:
+                raise forms.ValidationError(
+                    _('This URL could not be resolved.')) from exc
             except InvalidURLError as exc:
                 raise forms.ValidationError(_('This URL is not allowed.')) from exc
         return uri

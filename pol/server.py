@@ -32,7 +32,7 @@ from scrapy.selector import Selector
 from pol.log import LogHandler
 from .feed import Feed
 from .client import ppReadBody, IGNORE_SIZE
-from .reader.errors import InvalidURLError
+from .reader.errors import InvalidURLError, UnresolvableURLError
 from .reader.safety import assert_public_url
 from .reader.web import ReaderEndpoints
 
@@ -483,23 +483,29 @@ class Site(resource.Resource):
         self.downloadercls = downloadercls or Downloader
         self.allow_private = allow_private
 
-    def _url_allowed(self, url):
+    def _url_error(self, url):
+        """The reason ``url`` may not be fetched, or None when it is allowed."""
         if self.allow_private:
-            return True
+            return None
         try:
             assert_public_url(url)
+        except UnresolvableURLError:
+            return 'This URL could not be resolved.'
         except InvalidURLError:
-            return False
-        return True
+            return 'This URL is not allowed.'
+        return None
+
+    def _url_allowed(self, url):
+        return self._url_error(url) is None
 
     def _defer_url_check(self, request, url, on_allowed):
         """Run the blocking DNS check off the reactor thread."""
-        def _allowed(allowed):
-            if allowed:
+        def _allowed(error):
+            if not error:
                 on_allowed()
                 return
             request.setResponseCode(400)
-            request.write(b'This URL is not allowed.')
+            request.write(error.encode('utf-8'))
             request.finish()
 
         def _failed(failure):
@@ -509,7 +515,7 @@ class Site(resource.Resource):
                 request.write(b'Internal error')
                 request.finish()
 
-        d = threads.deferToThread(self._url_allowed, url)
+        d = threads.deferToThread(self._url_error, url)
         d.addCallback(_allowed)
         d.addErrback(_failed)
 

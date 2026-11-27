@@ -111,10 +111,12 @@ def _normalize_setup_url(raw_url):
         raise _BadRequest('Invalid url') from exc
 
     if not getattr(django_settings, 'READER_ALLOW_PRIVATE', False):
-        from pol.reader.errors import InvalidURLError
+        from pol.reader.errors import InvalidURLError, UnresolvableURLError
         from pol.reader.safety import assert_public_url
         try:
             assert_public_url(url)
+        except UnresolvableURLError as exc:
+            raise _BadRequest('This URL could not be resolved.') from exc
         except InvalidURLError as exc:
             raise _BadRequest('This URL is not allowed.') from exc
     return url
