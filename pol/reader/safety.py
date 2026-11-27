@@ -11,7 +11,7 @@ import ipaddress
 import socket
 from urllib.parse import urlsplit
 
-from .errors import InvalidURLError
+from .errors import InvalidURLError, UnresolvableURLError
 
 BLOCKED_HOSTNAMES = frozenset({'localhost', 'metadata', 'metadata.google.internal'})
 BLOCKED_SUFFIXES = ('.localhost', '.local', '.internal', '.home.arpa')
@@ -71,7 +71,7 @@ def assert_public_url(url: str, resolver=resolve_addresses) -> str:
     try:
         addresses = resolver(host)
     except (socket.gaierror, OSError) as exc:
-        raise InvalidURLError('URL host could not be resolved') from exc
+        raise UnresolvableURLError('URL host could not be resolved') from exc
 
     if any(is_blocked_host(address) for address in addresses):
         raise InvalidURLError('URL host is not allowed')

@@ -1,6 +1,8 @@
+import socket
+
 import pytest
 
-from pol.reader.errors import InvalidURLError
+from pol.reader.errors import InvalidURLError, UnresolvableURLError
 from pol.reader.http import Fetcher
 from pol.reader.safety import assert_public_url, is_blocked_host
 from pol.reader.web import ReaderEndpoints
@@ -73,6 +75,16 @@ def test_hostname_with_one_private_answer_is_rejected():
 def test_hostname_with_only_public_answers_is_allowed():
     url = 'http://public.example.com/feed.xml'
     assert assert_public_url(url, resolver=lambda host: ['93.184.216.34']) == url
+
+
+def test_resolver_failure_is_not_reported_as_a_refused_host():
+    def resolver(host):
+        raise socket.gaierror(-3, 'Temporary failure in name resolution')
+
+    with pytest.raises(UnresolvableURLError) as excinfo:
+        assert_public_url('http://example.com/feed.xml', resolver=resolver)
+    assert isinstance(excinfo.value, InvalidURLError)
+    assert 'could not be resolved' in str(excinfo.value)
 
 
 def test_redirect_handler_refuses_a_private_hop():
