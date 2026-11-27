@@ -1,6 +1,7 @@
 """CI sanity tests for the pol downloader core and path-guard logic."""
 
 import os
+import re
 
 import pytest
 
@@ -68,3 +69,16 @@ def test_snapshot_path_guard_accepts_valid_name(tmp_path, monkeypatch):
     assert posts == []  # no elements match the xpath, so nothing is extracted
     feed_result, field_results = messages
     assert feed_result["count"] == 0
+
+
+def test_compose_forwards_the_contact_url():
+    # POL_CONTACT_URL is read from the process environment, so a manifest that
+    # does not forward it leaves the Contact page empty in Docker.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    entry = re.compile(r"^\s+POL_CONTACT_URL:\s*['\"]?\$\{POL_CONTACT_URL:-\}['\"]?\s*$", re.M)
+    for name in ('docker-compose.yaml', 'docker-compose.prod.yml'):
+        with open(os.path.join(root, name), encoding='utf-8') as fh:
+            manifest = fh.read()
+        service = re.search(r'\n  politepol:\n(.*?)(?=\n  \w)', manifest, re.S)
+        assert service, '%s has no politepol service' % name
+        assert entry.search(service.group(1)), name

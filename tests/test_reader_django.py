@@ -282,12 +282,29 @@ def test_setup_allows_private_url_when_enabled():
     assert response.status_code == 200
 
 
-@override_settings(**TEST_SETTINGS)
-def test_contact_links_to_github_and_has_no_email():
+@override_settings(**TEST_SETTINGS, CONTACT_URL='')
+def test_contact_has_no_vendor_links():
     response = Client().get('/en/contact')
     assert response.status_code == 200
-    assert b'github.com/ashcoft' in response.content
-    assert b'politepol.com@gmail.com' not in response.content
+    assert b'github.com/ashcoft' not in response.content
+    assert b'No contact address is configured for this site.' in response.content
+
+
+@override_settings(**TEST_SETTINGS, CONTACT_URL='https://example.com/contact')
+def test_contact_uses_the_configured_url():
+    response = Client().get('/en/contact')
+    assert response.status_code == 200
+    assert b'https://example.com/contact' in response.content
+
+
+@override_settings(**TEST_SETTINGS)
+def test_pages_use_the_rss_finder_brand():
+    for url in ('/en/', '/en/contact', '/en/myfeeds'):
+        response = Client().get(url)
+        assert response.status_code == 200
+        content = response.content
+        assert b'Polite Pol' not in content
+        assert b'RSS Finder' in content
 
 
 @override_settings(**TEST_SETTINGS)

@@ -269,7 +269,7 @@ class Downloader(object):
                 self.request.write(('Downloader error: ' + str(error.getErrorMessage())).encode('utf-8'))
                 self.request.write(('Traceback: ' + str(error.getTraceback())).encode('utf-8'))
             else:
-                err_message = self.error_html('<h1>PolitePol says: "Something wrong"</h1> <p><b>Try to refresh page or open an issue: <a href="https://github.com/ashcoft/">github.com/ashcoft</a></b>\n(Help us to improve our service with your feedback)</p> <p><i>Scary mantra: %s</i></p>' % escape(error.getErrorMessage()))
+                err_message = self.error_html('<h1>Something went wrong</h1> <p>Try to refresh the page.</p> <p><i>Details: %s</i></p>' % escape(error.getErrorMessage()))
                 self.request.write(err_message.encode('utf-8'))
 
             self.request.finish()
@@ -296,7 +296,7 @@ class Downloader(object):
             self.writeResponse(sresponse)
             self.run_memon()
 
-    def writeResponse(self, sresponse): #, response_str='PolitePol: Local page processing is failed'
+    def writeResponse(self, sresponse):
         sresponse = self._decompress(sresponse)
 
         # Pages behind bot protection (Cloudflare and friends) return a
@@ -372,7 +372,7 @@ class Downloader(object):
 
     def _write_error(self, status, title, detail):
         page = self.error_html(
-            '<h1>PolitePol says: "%s"</h1>\n<p>%s</p>' % (escape(title), escape(detail)))
+            '<h1>%s</h1>\n<p>%s</p>' % (escape(title), escape(detail)))
         self.request.setResponseCode(status)
         self.request.setHeader(b'Content-Type', b'text/html; charset=utf-8')
         self.request.write(page.encode('utf-8'))

@@ -88,7 +88,7 @@ def _discover(page, http_server):
 
 def test_home_page_loads(page):
     page.goto(f'{BASE_URL}/en/')
-    expect(page).to_have_title(re.compile('Polite'))
+    expect(page).to_have_title(re.compile('RSS Finder'))
     expect(page.get_by_role('heading', name='RSS Finder')).to_be_visible()
     expect(page.locator('input[name="url"]')).to_be_visible()
     expect(page.locator('input[name="cap-token"]')).to_have_count(1)

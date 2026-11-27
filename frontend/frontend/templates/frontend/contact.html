@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load static %}
 {% load i18n %}
 
 {% block content %}
@@ -7,17 +6,14 @@
   <h1>{% trans "contact" %}</h1>
 </div>
 <div class="media">
-<form class="form-horizontal">
- <div class="control-group">
-   <label class="control-label" for="github_link">{% trans "contact.title" %}</label>
-   <div class="controls">
-     <div class="input-prepend">
-       <span class="add-on"><i class="icon-globe"></i></span>
-       <a class="btn btn-link" id="github_link" href="https://github.com/ashcoft/" target="_blank" rel="noopener">github.com/ashcoft</a>
-     </div>
-     <span class="help-inline">{% trans "contact.msg" %}</span>
-   </div>
- </div>
-</form>
+  {% if contact_url %}
+  <p>
+    {% trans "contact.title" %}
+    <a class="btn btn-link" id="contact_link" href="{{ contact_url }}" target="_blank" rel="noopener">{{ contact_url }}</a>
+  </p>
+  <p class="help-inline">{% trans "contact.msg" %}</p>
+  {% else %}
+  <p>{% trans "contact.none" %}</p>
+  {% endif %}
 </div>
 {% endblock %}

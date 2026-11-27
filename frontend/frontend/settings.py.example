@@ -125,6 +125,11 @@ LANGUAGES = (
     ('ru', 'Russian'),
 )
 
+# Resolve the catalogs from the app directory. Without this, the locale folder is
+# only found when "frontend" is imported as the app package (gunicorn's
+# --pythonpath ./frontend), not when the project is imported as frontend.frontend.
+LOCALE_PATHS = [os.path.join(PROJECT_DIR, 'locale')]
+
 TIME_ZONE = os.environ.get('TIME_ZONE', 'UTC')
 
 USE_I18N = True
@@ -203,6 +208,9 @@ PIPELINE['PIPELINE_ENABLED'] = False
 DOWNLOADER_PAGE_URL = '/downloader?url='
 
 FEED_PAGE_URL = '/feed/'
+# Contact link shown on the Contact page. Set POL_CONTACT_URL to your own
+# address or page; leaving it empty hides the link.
+CONTACT_URL = os.environ.get('POL_CONTACT_URL', '')
 
 DOWNLOADER_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 # limit of seconds in which user can access separate feed

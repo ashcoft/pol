@@ -33,17 +33,9 @@ msgstr ""
 msgid "contact"
 msgstr "Contact"
 
-#: templates/base.html:93
-msgid "made_by"
-msgstr "Made by"
-
-#: templates/base.html:93
-msgid "made_name"
-msgstr "Alexandr Nesterenko"
-
 #: templates/frontend/contact.html:18
 msgid "contact.title"
-msgstr "Contact us by email:"
+msgstr "Contact:"
 
 #: templates/frontend/contact.html:24
 msgid "contact.msg"
@@ -51,11 +43,11 @@ msgstr "We will answer ASAP"
 
 #: templates/frontend/index.html:5
 msgid "index_title"
-msgstr "PolitePol.com: Generate RSS feeds for any web page"
+msgstr "RSS Finder: generate RSS feeds for any web page"
 
 #: templates/frontend/index.html:8 templates/frontend/index.html.py:20
 msgid "brand"
-msgstr "Polite Pol"
+msgstr "RSS Finder"
 
 #: templates/frontend/index.html:15 templates/frontend/index.html.py:16
 #: templates/frontend/index.html:43
@@ -72,7 +64,7 @@ msgstr "Go!"
 
 #: templates/frontend/index.html:46
 msgid "help.header"
-msgstr "Video tutorial how to make your feed:"
+msgstr "How to make a feed"
 
 #: templates/frontend/preview.html:11
 msgid "subscribe.feed_ready"
@@ -195,3 +187,12 @@ msgstr "Date xpath"
 
 msgid "setup.image_xpath"
 msgstr "Image xpath"
+
+msgid "help.body"
+msgstr ""
+"Enter the address of the page you want to follow, complete the verification,"
+" then pick the elements that make up each post. RSS Finder turns your "
+"selection into a feed you can subscribe to."
+
+msgid "contact.none"
+msgstr "No contact address is configured for this site."

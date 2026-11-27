@@ -76,11 +76,6 @@ function opacity() {
 }
 
 
-window.onYouTubeIframeAPIReady = function() { // doesn't work
-  window.player = new YT.Player('helpPlayer', {
-  });
-};
-
 $(document).ready(function() {
   if (!document.getElementById('buoy'))
     return;
@@ -90,10 +85,6 @@ $(document).ready(function() {
   
   $('#helpModalRef').click(shot);
   
-  $('#helpModal').on('hidden', function() {
-    if (window.player)
-      window.player.stopVideo(); 
-  })
 });
 
 
